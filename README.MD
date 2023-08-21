@@ -30,7 +30,11 @@
 拦截器不生效原因：MvcConfig没加@Configuration注解
 
 alt+j 多选快捷键
+
 Ctrl+Alt+V 自动补全快捷键
+
 ctrl+alt+L 格式化代码
+
 ctrl+O 重写方法
+
 ctrl+shift+U 大小写转换
