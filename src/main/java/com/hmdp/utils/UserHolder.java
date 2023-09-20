@@ -2,6 +2,7 @@ package com.hmdp.utils;
 
 import com.hmdp.dto.UserDTO;
 
+//TODO 这是用来干嘛的🤔
 public class UserHolder {
     private static final ThreadLocal<UserDTO> tl = new ThreadLocal<>();
 

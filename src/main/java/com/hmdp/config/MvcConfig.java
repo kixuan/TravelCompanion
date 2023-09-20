@@ -1,7 +1,7 @@
 package com.hmdp.config;
 
-import com.hmdp.utils.LoginInterceptor;
-import com.hmdp.utils.RefreshTokenInterceptor;
+import com.hmdp.interceptor.LoginInterceptor;
+import com.hmdp.interceptor.RefreshTokenInterceptor;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
@@ -19,19 +19,21 @@ public class MvcConfig implements WebMvcConfigurer {
 //    添加拦截器
     public void addInterceptors(InterceptorRegistry registry) {
 //        登录拦截器
-        registry.addInterceptor(new LoginInterceptor())
+        registry.addInterceptor(new LoginInterceptor(stringRedisTemplate))
                 .excludePathPatterns(
-                "/shop/**",
-                "/voucher/**",
-                "/shop-type/**",
-                "/upload/**",
-                "/blog/hot",
-                "/user/code",
-                "/user/login",
-                "/user/me"
-        ).order(1);
-//        token刷新拦截器
-registry.addInterceptor(new RefreshTokenInterceptor(stringRedisTemplate))
-        .addPathPatterns("/**").order(0);
+                        "/shop/**",
+                        "/voucher/**",
+                        "/shop-type/**",
+                        "/upload/**",
+                        "/blog/hot",
+                        "/user/code",
+                        "/user/login",
+                        "/user/me"
+                ).order(1);
+
+
+//        token刷新拦截器   order为0，最高
+        registry.addInterceptor(new RefreshTokenInterceptor(stringRedisTemplate))
+                .addPathPatterns("/**").order(0);
     }
 }

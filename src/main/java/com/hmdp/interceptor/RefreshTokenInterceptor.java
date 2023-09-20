@@ -1,8 +1,9 @@
-package com.hmdp.utils;
+package com.hmdp.interceptor;
 
 import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.util.StrUtil;
 import com.hmdp.dto.UserDTO;
+import com.hmdp.utils.UserHolder;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.web.servlet.HandlerInterceptor;
 
@@ -12,11 +13,11 @@ import javax.servlet.http.HttpServletResponse;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
-import static com.hmdp.utils.RedisConstants.LOGIN_USER_KEY;
-import static com.hmdp.utils.SystemConstants.LOGIN_USER_TTL;
+import static com.hmdp.constant.RedisConstants.LOGIN_USER_KEY;
+import static com.hmdp.constant.RedisConstants.LOGIN_USER_TTL;
 
 public class RefreshTokenInterceptor implements HandlerInterceptor {
-    private StringRedisTemplate stringRedisTemplate;
+    private final StringRedisTemplate stringRedisTemplate;
 
     public RefreshTokenInterceptor(StringRedisTemplate stringRedisTemplate) {
         this.stringRedisTemplate = stringRedisTemplate;
@@ -33,6 +34,8 @@ public class RefreshTokenInterceptor implements HandlerInterceptor {
 
         // 2.基于TOKEN获取redis中的用户
         String key = LOGIN_USER_KEY + token;
+        // opsForHash()：返回一个操作哈希数据结构的特定操作器
+        // entries()：获取指定key的哈希表中的所有字段和它们的值
         Map<Object, Object> userMap = stringRedisTemplate.opsForHash().entries(key);
         if(userMap.isEmpty()){
             return true;
