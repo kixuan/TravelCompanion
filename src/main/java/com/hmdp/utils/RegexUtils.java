@@ -3,7 +3,7 @@ package com.hmdp.utils;
 import cn.hutool.core.util.StrUtil;
 
 /**
- * @author 虎哥
+ * @author kixuan
  */
 // TODO 使用第三方库实现，以后懒得写了
 public class RegexUtils {

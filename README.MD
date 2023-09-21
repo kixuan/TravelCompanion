@@ -10,7 +10,8 @@
     - 报错显示`警告: 源发行版 9 需要目标发行版 9`
     - -->`无效的源发行版: 9`
         - https://blog.csdn.net/weixin_45716968/article/details/129436663?spm=1001.2101.3001.6650.1&utm_medium=distribute.pc_relevant.none-task-blog-2%7Edefault%7ECTRLIST%7ERate-1-129436663-blog-121019126.235%5Ev36%5Epc_relevant_default_base3&depth_1-utm_source=distribute.pc_relevant.none-task-blog-2%7Edefault%7ECTRLIST%7ERate-1-129436663-blog-121019126.235%5Ev36%5Epc_relevant_default_base3&utm_relevant_index=2
-5. 访问http://localhost:8080
+5. 打开：E:\Project\Java\hmdpAll\nginx-1.18.0  输入cmd，再输入 start nginx.exe （闪屏也没关系）
+6. 访问http://localhost:8080
 
 - 出错显示`Whitelabel Error Page`
     - 看第三步是否完成
