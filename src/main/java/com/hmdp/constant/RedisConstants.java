@@ -10,9 +10,13 @@ public class RedisConstants {
     // 商品查询⽤到的key
     public static final String CACHE_SHOP_KEY = "cache:shop:";
     public static final Long CACHE_SHOP_TTL = 30L;
+    //避免缓存穿透
     public static final Long CACHE_NULL_TTL = 2L;
+    //避免缓存击穿
     public static final String LOCK_SHOP_KEY = "lock:shop:";
     public static final Long LOCK_SHOP_TTL = 10L;
+
+
     public static final String SECKILL_STOCK_KEY = "seckill:stock:";
     public static final String BLOG_LIKED_KEY = "blog:liked:";
     public static final String FEED_KEY = "feed:";

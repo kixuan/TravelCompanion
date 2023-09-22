@@ -10,8 +10,10 @@
     - 报错显示`警告: 源发行版 9 需要目标发行版 9`
     - -->`无效的源发行版: 9`
         - https://blog.csdn.net/weixin_45716968/article/details/129436663?spm=1001.2101.3001.6650.1&utm_medium=distribute.pc_relevant.none-task-blog-2%7Edefault%7ECTRLIST%7ERate-1-129436663-blog-121019126.235%5Ev36%5Epc_relevant_default_base3&depth_1-utm_source=distribute.pc_relevant.none-task-blog-2%7Edefault%7ECTRLIST%7ERate-1-129436663-blog-121019126.235%5Ev36%5Epc_relevant_default_base3&utm_relevant_index=2
-5. 打开：E:\Project\Java\hmdpAll\nginx-1.18.0  输入cmd，再输入 start nginx.exe （闪屏也没关系）
-6. 访问http://localhost:8080
+5. 打开：E:\Project\Java\hmdpAll\nginx-1.18.0  输入cmd，再输入 start nginx.exe （闪屏也没关系），访问http://localhost:8080
+   1. 如果后台没有进程，就去conf改端口
+   2. 有进程但是报404的错，可能是你改了端口但是访问地址没改端口
+
 
 - 出错显示`Whitelabel Error Page`
     - 看第三步是否完成
@@ -100,6 +102,57 @@ com/hmdp/interceptor/LoginInterceptor.java
 检查再存的时候是否用了redis，这里别忘了
 
 拦截器不生效原因：MvcConfig没加@Configuration注解
+
+
+
+## 商户查询缓存
+
+### 缓存穿透
+
+缓存穿透 ：是指客户端请求的数据在缓存中和数据库中都不存在，这样缓存永远不会生效，这些请求都会打到数据库。
+![image-20230922102237164](https://cdn.jsdelivr.net/gh/kixuan/PicGo/images/image-20230922102237164.png)
+
+### 缓存雪崩
+
+缓存雪崩：是指在同一时段大量的缓存key同时失效或者Redis服务宕机，导致大量请求到达数据库，带来巨大压力。
+![1653327884526](https://cdn.jsdelivr.net/gh/kixuan/PicGo/images/1653327884526.png)
+
+解决方案：
+
+* 给不同的Key的TTL添加随机值
+* 利用Redis集群提高服务的可用性
+* 给缓存业务添加降级限流策略
+* 给业务添加多级缓存
+
+
+
+### 缓存击穿
+
+缓存击穿问题也叫热点Key问题，就是一个被高并发访问并且缓存重建业务较复杂的key突然失效了，无数的请求访问会在瞬间给数据库带来巨大的冲击
+
+#### 法1：互斥锁
+
+其实就是一个时间段只能一个线程去处理问题，然后给个锁不让其他线程进来处理，让他去睡觉，睡一会等锁被释放了再来处理
+
+<img src="https://cdn.jsdelivr.net/gh/kixuan/PicGo/images/image-20230922102857515.png" alt="image-20230922102857515" style="zoom:50%;" />
+
+
+
+#### 法2：逻辑过期
+
+既然是高并发访问那干脆就直接redis里面一直都不要删除了，再加个逻辑过期时间，过期的话就开个独立线程去更新数据写入redis，在没更新完之前访问到的都是redis里面的旧数据
+
+but意想不到的难点居然是如何给数据添加过期时间的字段
+
+方案一：新建⼀个RedisData类，这个类有过期时间字段，然后让pojo继承这个类/直接在原有的类直接加字段，但是这样就改变基础代码了
+
+so方案二：新建⼀个RedisData类，这个类有过期时间字段，同时有另⼀个Object字段（ob就是牛啦存什么都行）用来存数据。相当于给数据又加了⼀层封装
+
+## QS
+
+1. 商铺查询好像有个测试是测什么前面几个没变后面才变了的，没做，不记得是测试什么了
+
+## tips
 
 alt+j 多选快捷键
 Ctrl+Alt+V 自动补全快捷键
