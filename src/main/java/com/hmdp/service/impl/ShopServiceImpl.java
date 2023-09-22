@@ -9,6 +9,7 @@ import com.hmdp.dto.Result;
 import com.hmdp.entity.Shop;
 import com.hmdp.mapper.ShopMapper;
 import com.hmdp.service.IShopService;
+import com.hmdp.utils.CacheCilent;
 import com.hmdp.utils.RedisData;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
@@ -38,6 +39,9 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
     @Resource
     private ShopMapper shopMapper;
 
+    @Resource
+    private CacheCilent cacheCilent;
+
     //线程池
     private static final ExecutorService CACHE_REBUILD_EXECUTOR = Executors.newFixedThreadPool(10);
 
@@ -47,6 +51,17 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
      * @Param: [id]
      * @return: com.hmdp.dto.Result
      */
+
+    public Result queryById(Long id){
+        // 解决缓存穿透
+        Shop shop = cacheCilent
+                .queryWithPassThrough(CACHE_SHOP_KEY,id,Shop.class,this::getById,CACHE_SHOP_TTL,TimeUnit.MINUTES);
+
+        if (shop == null){
+            return Result.fail("店铺不存在！");
+        }
+        return Result.ok(shop);
+    }
 
     // 使用互斥锁解决缓存击穿
     // @Override
@@ -113,46 +128,46 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
     // }
 
 
-    @Override
+    // @Override
     // 使用逻辑过期解决缓存击穿
     // 注意这个的前提是需要的热点key都已经被存到redis里面了，所以判断的逻辑需要进行改变
-    public Result queryById(Long id) {
-        //查询redis，这里的shopJson是(Object)RedisData类型的
-        String key = CACHE_SHOP_KEY + id;
-        String shopJson = stringRedisTemplate.opsForValue().get(key);
-
-        //未命中，说明不是热点key
-        if (StringUtils.isBlank(shopJson)) {
-            return null;
-        }
-
-        // 命中的话再判断是否逻辑过期
-        RedisData redisData = JSONUtil.toBean(shopJson, RedisData.class);
-        Shop shop = JSONUtil.toBean((JSONObject) redisData.getData(), Shop.class);
-        LocalDateTime expireTime = redisData.getExpireTime();
-        // 未过期直接返回shop
-        if (LocalDateTime.now().isBefore(expireTime)) {
-            return Result.ok(shop);
-        }
-
-        //过期了就重建缓存：先获取锁，再开个独立线程处理
-        String lockKey = LOCK_SHOP_KEY + id;
-        boolean lock = tryLock(lockKey);
-        if (lock) {
-            CACHE_REBUILD_EXECUTOR.submit(() -> {
-                try {
-                    // 模拟重建延迟
-                    this.saveShop2Redis(id, 20L);
-                } catch (Exception e) {
-                    throw new RuntimeException(e);
-                } finally {
-                    unLock(lockKey);
-                }
-            });
-        }
-        // 返回旧数据
-        return Result.ok(shop);
-    }
+    // public Result queryById(Long id) {
+    //     //查询redis，这里的shopJson是(Object)RedisData类型的
+    //     String key = CACHE_SHOP_KEY + id;
+    //     String shopJson = stringRedisTemplate.opsForValue().get(key);
+    //
+    //     //未命中，说明不是热点key
+    //     if (StringUtils.isBlank(shopJson)) {
+    //         return null;
+    //     }
+    //
+    //     // 命中的话再判断是否逻辑过期
+    //     RedisData redisData = JSONUtil.toBean(shopJson, RedisData.class);
+    //     Shop shop = JSONUtil.toBean((JSONObject) redisData.getData(), Shop.class);
+    //     LocalDateTime expireTime = redisData.getExpireTime();
+    //     // 未过期直接返回shop
+    //     if (LocalDateTime.now().isBefore(expireTime)) {
+    //         return Result.ok(shop);
+    //     }
+    //
+    //     //过期了就重建缓存：先获取锁，再开个独立线程处理
+    //     String lockKey = LOCK_SHOP_KEY + id;
+    //     boolean lock = tryLock(lockKey);
+    //     if (lock) {
+    //         CACHE_REBUILD_EXECUTOR.submit(() -> {
+    //             try {
+    //                 // 模拟重建延迟
+    //                 this.saveShop2Redis(id, 20L);
+    //             } catch (Exception e) {
+    //                 throw new RuntimeException(e);
+    //             } finally {
+    //                 unLock(lockKey);
+    //             }
+    //         });
+    //     }
+    //     // 返回旧数据
+    //     return Result.ok(shop);
+    // }
 
     //获取锁
     private boolean tryLock(String lockKey) {
