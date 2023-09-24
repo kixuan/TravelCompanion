@@ -44,4 +44,10 @@ public class BlogController {
         // 不然前端无法正常读取数据
         return blogService.queryHotBlog(current);
     }
+
+    @GetMapping("/{id}")
+    public Result queryBlogById(@PathVariable("id") Long id) {
+        return blogService.queryBlogById(id);
+    }
+
 }
