@@ -163,6 +163,26 @@ but意想不到的难点居然是如何给数据添加过期时间的字段
 
 so方案二：新建⼀个RedisData类，这个类有过期时间字段，同时有另⼀个Object字段（ob就是牛啦存什么都行）用来存数据。相当于给数据又加了⼀层封装
 
+
+
+
+
+
+
+## 达人探店
+
+
+
+注意controller的return不用再加Result.ok(BlogServiceImpl.xxx(xxx))了，直接return BlogServiceImpl.xxx(xxx)
+
+前面一种返回值如下，前端是无法读取到的
+![image-20230924091827900](https://cdn.jsdelivr.net/gh/kixuan/PicGo/images/image-20230924091827900.png)
+
+后面一种的返回值如下，才能正常读取
+![image-20230924092020739](https://cdn.jsdelivr.net/gh/kixuan/PicGo/images/image-20230924092020739.png)
+
+
+
 ## QS
 
 1. 商铺查询好像有个测试是测什么前面几个没变后面才变了的，没做，不记得是测试什么了
