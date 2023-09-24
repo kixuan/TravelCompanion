@@ -45,33 +45,6 @@ public class BlogServiceImpl extends ServiceImpl<BlogMapper, Blog> implements IB
     @Resource
     private IUserService userService;
 
-    public Result queryBlogById(Long id) {
-        Blog blog = this.getById(id);
-        if (blog == null) {
-            return Result.fail("笔记不存在！");
-        }
-
-        // 2.查询blog有关的用户
-        queryBlogUser(blog);
-        // 3. 查询blog是否被点赞（前端显示）
-        isBlogLike(blog);
-        return Result.ok(blog);
-    }
-
-    private void isBlogLike(Blog blog) {
-        // 1.获取登录用户
-        UserDTO user = UserHolder.getUser();
-        if (user == null) {
-            // 用户未登录，无需查询是否点赞
-            // 不然一点进去首页就会报错空指针，因为调用了isBlogLike方法，没登陆的话是没有userId的
-            return;
-        }
-        String key = BLOG_LIKED_KEY + blog.getId();
-        //  Boolean isMember = stringRedisTemplate.opsForSet().isMember(key, user.getId().toString());
-        Double score = stringRedisTemplate.opsForZSet().score(key, user.getId().toString());
-        blog.setIsLike(score != null);
-    }
-
     @Override
     public Result saveBlog(Blog blog) {
         if (blog.getShopId() == null || blog.getTitle() == null || blog.getContent() == null) {
@@ -86,17 +59,17 @@ public class BlogServiceImpl extends ServiceImpl<BlogMapper, Blog> implements IB
     }
 
     @Override
-    public Result queryMyBlog(Integer current) {
-        // 获取登录用户
-        UserDTO user = UserHolder.getUser();
-        // 根据用户查询
-        Page<Blog> page = this.query()
-                .eq("user_id", user.getId())
-                .orderByDesc("liked")
-                .page(new Page<>(current, MAX_PAGE_SIZE));
-        // 获取当前页数据
-        List<Blog> records = page.getRecords();
-        return Result.ok(records);
+    public Result queryBlogById(Long id) {
+        Blog blog = this.getById(id);
+        if (blog == null) {
+            return Result.fail("笔记不存在！");
+        }
+
+        // 2.查询blog有关的用户
+        queryBlogUser(blog);
+        // 3. 查询blog是否被点赞（前端显示）
+        isBlogLike(blog);
+        return Result.ok(blog);
     }
 
     @Override
@@ -115,6 +88,20 @@ public class BlogServiceImpl extends ServiceImpl<BlogMapper, Blog> implements IB
         return Result.ok(records);
     }
 
+    @Override
+    public Result queryMyBlog(Integer current) {
+        // 获取登录用户
+        UserDTO user = UserHolder.getUser();
+        // 根据用户查询
+        Page<Blog> page = this.query()
+                .eq("user_id", user.getId())
+                .orderByDesc("liked")
+                .page(new Page<>(current, MAX_PAGE_SIZE));
+        // 获取当前页数据
+        List<Blog> records = page.getRecords();
+        return Result.ok(records);
+    }
+
     private void queryBlogUser(Blog blog) {
         Long userId = blog.getUserId();
         User user = userService.getById(userId);
@@ -122,6 +109,26 @@ public class BlogServiceImpl extends ServiceImpl<BlogMapper, Blog> implements IB
         blog.setIcon(user.getIcon());
     }
 
+    @Override
+    public Result queryBlogLikes(Long id) {
+        String key = BLOG_LIKED_KEY + id;
+        // 1.查询top5的点赞用户 zrange key 0 4
+        Set<String> top5 = stringRedisTemplate.opsForZSet().range(key, 0, 4);
+        if (top5 == null || top5.isEmpty()) {
+            return Result.ok(Collections.emptyList());
+        }
+        // 2.解析出其中的用户id
+        List<Long> ids = top5.stream().map(Long::valueOf).collect(Collectors.toList());
+        String idStr = StrUtil.join(",", ids);
+
+        // 3.根据用户id查询用户 WHERE id IN ( 5 , 1 ) ORDER BY FIELD(id, 5, 1)
+        Stream<UserDTO> userDTOS = userService.query().in("id", ids)
+                // 注意的这里的ORDER BY FIELD，这样才能实现数据库查询也按照自己想要的顺序排序
+                .last("ORDER BY FIELD(id," + idStr + ")")
+                .list().stream().map(user -> BeanUtil.copyProperties(user, UserDTO.class));
+        // 4.返回
+        return Result.ok(userDTOS);
+    }
 
     @Override
     public Result likeBlog(Long id) {
@@ -155,24 +162,17 @@ public class BlogServiceImpl extends ServiceImpl<BlogMapper, Blog> implements IB
         return Result.ok();
     }
 
-    @Override
-    public Result queryBlogLikes(Long id) {
-        String key = BLOG_LIKED_KEY + id;
-        // 1.查询top5的点赞用户 zrange key 0 4
-        Set<String> top5 = stringRedisTemplate.opsForZSet().range(key, 0, 4);
-        if (top5 == null || top5.isEmpty()) {
-            return Result.ok(Collections.emptyList());
+    private void isBlogLike(Blog blog) {
+        // 1.获取登录用户
+        UserDTO user = UserHolder.getUser();
+        if (user == null) {
+            // 用户未登录，无需查询是否点赞
+            // 不然一点进去首页就会报错空指针，因为调用了isBlogLike方法，没登陆的话是没有userId的
+            return;
         }
-        // 2.解析出其中的用户id
-        List<Long> ids = top5.stream().map(Long::valueOf).collect(Collectors.toList());
-        String idStr = StrUtil.join(",", ids);
-
-        // 3.根据用户id查询用户 WHERE id IN ( 5 , 1 ) ORDER BY FIELD(id, 5, 1)
-        Stream<UserDTO> userDTOS = userService.query().in("id", ids)
-                // 注意的这里的ORDER BY FIELD，这样才能实现数据库查询也按照自己想要的顺序排序
-                .last("ORDER BY FIELD(id," + idStr + ")")
-                .list().stream().map(user -> BeanUtil.copyProperties(user, UserDTO.class));
-        // 4.返回
-        return Result.ok(userDTOS);
+        String key = BLOG_LIKED_KEY + blog.getId();
+        //  Boolean isMember = stringRedisTemplate.opsForSet().isMember(key, user.getId().toString());
+        Double score = stringRedisTemplate.opsForZSet().score(key, user.getId().toString());
+        blog.setIsLike(score != null);
     }
 }

@@ -23,21 +23,25 @@ public class BlogController {
     @Resource
     private IBlogService blogService;
 
+    /**
+     * 保存笔记
+     */
     @PostMapping
     public Result saveBlog(@RequestBody Blog blog) {
         return blogService.saveBlog(blog);
     }
 
-    @PutMapping("/like/{id}")
-    public Result likeBlog(@PathVariable("id") Long id) {
-        return blogService.likeBlog(id);
+    /**
+     * 通过id查询笔记详情
+     */
+    @GetMapping("/{id}")
+    public Result queryBlogById(@PathVariable("id") Long id) {
+        return blogService.queryBlogById(id);
     }
 
-    @GetMapping("/of/me")
-    public Result queryMyBlog(@RequestParam(value = "current", defaultValue = "1") Integer current) {
-        return blogService.queryMyBlog(current);
-    }
-
+    /**
+     * 首页查询热门笔记
+     */
     @GetMapping("/hot")
     public Result queryHotBlog(@RequestParam(value = "current", defaultValue = "1") Integer current) {
         // 注意这里不要写成Result.ok(blogService.saveBlog(current));
@@ -45,14 +49,28 @@ public class BlogController {
         return blogService.queryHotBlog(current);
     }
 
-    @GetMapping("/{id}")
-    public Result queryBlogById(@PathVariable("id") Long id) {
-        return blogService.queryBlogById(id);
+    /**
+     * 查询自己的笔记
+     */
+    @GetMapping("/of/me")
+    public Result queryMyBlog(@RequestParam(value = "current", defaultValue = "1") Integer current) {
+        return blogService.queryMyBlog(current);
     }
 
+    /**
+     * 查询笔记点赞数量
+     */
     @GetMapping("/likes/{id}")
     public Result queryBlogLikes(@PathVariable("id") Long id) {
         return blogService.queryBlogLikes(id);
+    }
+
+    /**
+     * 点赞笔记
+     */
+    @PutMapping("/like/{id}")
+    public Result likeBlog(@PathVariable("id") Long id) {
+        return blogService.likeBlog(id);
     }
 
 }
