@@ -19,13 +19,14 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
+import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpSession;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 import static com.hmdp.constant.RedisConstants.*;
-import static com.hmdp.constant.SystemConstants.*;
+import static com.hmdp.constant.SystemConstants.USER_NICK_NAME_PREFIX;
 
 /**
  * 服务实现类
@@ -110,6 +111,19 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
 //        设置过期时间
         stringRedisTemplate.expire(tokenKey, LOGIN_USER_TTL, TimeUnit.MINUTES);
         return Result.ok(token);
+    }
+
+
+    @Override
+    public Result logout(HttpServletRequest request) {
+        String token = request.getHeader("Authorization");
+        if (token == null) {
+            return Result.ok("尚未登录！无法退出");
+        }
+        // 去掉redis的记录
+        String tokenKey = LOGIN_USER_KEY + token;
+        stringRedisTemplate.delete(tokenKey);
+        return Result.ok();
     }
 
     private User createUserWithPhone(String phone) {

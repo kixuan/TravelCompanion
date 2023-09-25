@@ -15,10 +15,13 @@ public class RedisConstants {
     //避免缓存击穿
     public static final String LOCK_SHOP_KEY = "lock:shop:";
     public static final Long LOCK_SHOP_TTL = 10L;
-
-
     public static final String SECKILL_STOCK_KEY = "seckill:stock:";
+
+    // Blog点赞用到的Key
     public static final String BLOG_LIKED_KEY = "blog:liked:";
+
+    // 好友关注用到的Key
+    public static final String FOLLOW_USER_KEY = "follow:user:";
     public static final String FEED_KEY = "feed:";
     public static final String SHOP_GEO_KEY = "shop:geo:";
     public static final String USER_SIGN_KEY = "sign:";

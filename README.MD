@@ -1,5 +1,20 @@
 # 黑马点评
 
+## 时长分布
+- 基础篇：P1-P22  3h59m
+- 实战篇：P24-P95	19h40m
+  - 短信登录：24-34  2h20m
+  - 商户查询：35-47  3h22m
+  - 优惠券秒杀：48-77 8h27m
+  - 达人探店：78-81 1h9m
+  - 好友关注：82-87 1h56m
+  - 附近商户：88-90 1h3m
+  - 用户签到：91-95 1h12m
+
+- 高级篇：P96-P144	9h29m
+- 原理篇：P145-P175	9h38m
+
+
 ## 启动项目
 
 1. 没有worksapce.xml的话，先自己新建一个-->如果没有service界面
@@ -147,6 +162,35 @@ but意想不到的难点居然是如何给数据添加过期时间的字段
 方案一：新建⼀个RedisData类，这个类有过期时间字段，然后让pojo继承这个类/直接在原有的类直接加字段，但是这样就改变基础代码了
 
 so方案二：新建⼀个RedisData类，这个类有过期时间字段，同时有另⼀个Object字段（ob就是牛啦存什么都行）用来存数据。相当于给数据又加了⼀层封装
+
+
+
+
+
+
+
+## 达人探店
+
+
+
+注意controller的return不用再加Result.ok(BlogServiceImpl.xxx(xxx))了，直接return BlogServiceImpl.xxx(xxx)
+
+前面一种返回值如下，前端是无法读取到的
+![image-20230924091827900](https://cdn.jsdelivr.net/gh/kixuan/PicGo/images/image-20230924091827900.png)
+
+后面一种的返回值如下，才能正常读取
+![image-20230924092020739](https://cdn.jsdelivr.net/gh/kixuan/PicGo/images/image-20230924092020739.png)
+
+
+
+set改成zset的时候一直报错：WRONGTYPE Operation against a key holding the wrong kind of value
+![image-20230924130827519](https://cdn.jsdelivr.net/gh/kixuan/PicGo/images/image-20230924130827519.png)
+
+一脸懵，就是DOUBLE类型啊，gpt也笨笨的找不到原因
+
+csdn了一下，是因为存取的类型不一致导致，之前只存了一个member，现在还存了score
+
+直接把之前的key删掉就行
 
 ## QS
 
