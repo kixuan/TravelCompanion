@@ -183,6 +183,15 @@ so方案二：新建⼀个RedisData类，这个类有过期时间字段，同时
 
 
 
+set改成zset的时候一直报错：WRONGTYPE Operation against a key holding the wrong kind of value
+![image-20230924130827519](https://cdn.jsdelivr.net/gh/kixuan/PicGo/images/image-20230924130827519.png)
+
+一脸懵，就是DOUBLE类型啊，gpt也笨笨的找不到原因
+
+csdn了一下，是因为存取的类型不一致导致，之前只存了一个member，现在还存了score
+
+直接把之前的key删掉就行
+
 ## QS
 
 1. 商铺查询好像有个测试是测什么前面几个没变后面才变了的，没做，不记得是测试什么了
