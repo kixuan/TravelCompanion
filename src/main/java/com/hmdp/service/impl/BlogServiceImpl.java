@@ -57,7 +57,7 @@ public class BlogServiceImpl extends ServiceImpl<BlogMapper, Blog> implements IB
     @Override
     public Result saveBlog(Blog blog) {
         if (blog.getShopId() == null || blog.getTitle() == null || blog.getContent() == null) {
-            return Result.fail("必须把相关信息填写完整！");
+            return Result.fail("提交前情把Blog全部信息填写完整(●'◡'●)");
         }
         // 1. 获取登录用户
         UserDTO user = UserHolder.getUser();
@@ -73,7 +73,7 @@ public class BlogServiceImpl extends ServiceImpl<BlogMapper, Blog> implements IB
         for (Follow follow : follows) {
             // 4.1.获取粉丝id
             Long userId = follow.getUserId();
-            // 4.2.⭐推送 (思路就是只把blog的id传到redis里面，到时候再调用bolg的query方法获取详情)
+            // 4.2.推送 (思路就是只把blog的id传到redis里面，到时候再调用bolg的query方法获取详情)
             String key = FEED_KEY + userId;
             // 还是要按时间戳当作value，因为要进行排序
             stringRedisTemplate.opsForZSet().add(key, blog.getId().toString(), System.currentTimeMillis());

@@ -25,6 +25,7 @@ public class FollowController {
      * 进行关注/取关操作
      */
     @PutMapping("/{id}/{isFollow}")
+    //@PathVariable 映射URL绑定的占位符
     public Result follow(@PathVariable("id")Long followUserId,@PathVariable("isFollow")Boolean isFollow){
         return  followService.follow(followUserId,isFollow);
     }
