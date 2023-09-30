@@ -51,7 +51,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
     private UserMapper userMapper;
 
     @Override
-    public Result sendCode(String phone, HttpSession session) {
+    public Result sendCode(String phone) {
 //        1.检验手机号
         if (RegexUtils.isPhoneInvalid(phone)) {
             //  这里抛出异常和return fail有什么区别吗？———> 有区别，抛出异常会被全局异常处理器捕获，返回fail不会
@@ -70,13 +70,13 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
     }
 
     @Override
-    public Result login(LoginFormDTO loginForm, HttpSession session) {
+    public Result login(LoginFormDTO loginForm) {
 //        1.检验手机号  ———>  因为每个请求都是单独的，使用还要再检查一次
         String phone = loginForm.getPhone();
         if (RegexUtils.isPhoneInvalid(phone)) {
             return Result.fail("手机号格式错误！");
         }
-//   ⭐     2.检验验证码   --  从redis中获取
+//        2.检验验证码   --  从redis中获取
 //        Object cacheCode = session.getAttribute("code");
         String cacheCode = stringRedisTemplate.opsForValue().get(LOGIN_CODE_KEY + phone);
         String code = loginForm.getCode();
@@ -161,11 +161,22 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
         int dayOfMonth = now.getDayOfMonth();
 
         // 5.获取本月截止今天为止的所有的签到记录，返回的是一个十进制的数字 BITFIELD sign:5:202203 GET u14 0
+        // bitField(key, BitFieldSubCommands.create()...)：这是使用 Redis 的 BITFIELD 命令来进行位域操作的部分。它接受一个键（key）以及一个位域子命令（BitFieldSubCommands.create()）。
+        // BitFieldSubCommands.create()：这是一个用于创建位域子命令的工厂方法。
+        // .get(BitFieldSubCommands.BitFieldType.unsigned(dayOfMonth))：这一部分定义了要获取的位域。
+        //  BitFieldSubCommands.BitFieldType.unsigned(dayOfMonth) 指示要获取的位域类型是无符号整数，dayOfMonth 是一个表示具体位域位置的变量或常量。
+        // .valueAt(0)：这一部分指示要获取位域的位置，这里是位域中的第一个位（索引为0）。
+        // 作用是从指定的 Redis 键（key）中获取位域中的某个位的值，位域类型为无符号整数（unsigned），位域的位置是位域中的第一个位（索引为0）。获取的结果将被存储在一个 List<Long> 中，并且该 List 中的每个元素对应于位域中的一个位的值。
+        // 涉及到多个位，需要返回一个List<Long>，其中每个Long表示一个位的状态
         List<Long> result = stringRedisTemplate
                 .opsForValue()
                 .bitField(key, BitFieldSubCommands.create()
+                        // 获取多少位
                         .get(BitFieldSubCommands.BitFieldType.unsigned(dayOfMonth))
+                        // 从左到右取
                         .valueAt(0));
+        System.out.println("result ===== " + result);
+
         if (result == null || result.isEmpty()) {
             // 没有任何签到结果
             return Result.ok(0);
@@ -181,11 +192,11 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
             if ((num & 1) == 0) {
                 break;
             } else {
-                // 如果不为0，说明已签到，计数器+1
                 count++;
             }
             // 把数字右移一位，抛弃最后一个bit位，继续下一个bit位
             num >>>= 1;
+            System.out.println("num ==== " + num);
         }
         return Result.ok(count);
     }

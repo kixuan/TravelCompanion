@@ -40,17 +40,17 @@ public class UserController {
      * 发送手机验证码
      */
     @PostMapping("code")
-    public Result sendCode(@RequestParam("phone") String phone, HttpSession session) {
+    public Result sendCode(@RequestParam("phone") String phone) {
         //  发送短信验证码并保存验证码到session
-        return userService.sendCode(phone, session);
+        return userService.sendCode(phone);
     }
 
     /**
      * 登录功能
      */
     @PostMapping("/login")
-    public Result login(@RequestBody LoginFormDTO loginForm, HttpSession session) {
-        return userService.login(loginForm, session);
+    public Result login(@RequestBody LoginFormDTO loginForm) {
+        return userService.login(loginForm);
     }
 
     /**
@@ -96,7 +96,7 @@ public class UserController {
         return Result.ok(userDTO);
     }
 
-    @PostMapping("/sign")
+    @PostMapping("/sign/me")
     public Result sign(){
         return userService.sign();
     }

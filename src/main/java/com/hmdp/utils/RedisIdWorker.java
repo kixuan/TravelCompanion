@@ -1,5 +1,6 @@
 package com.hmdp.utils;
 
+import com.hmdp.dto.Result;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
@@ -21,6 +22,7 @@ public class RedisIdWorker {
 
     private final StringRedisTemplate stringRedisTemplate;
 
+    // 因为这里的stringRedisTemplate是通过构造函数注入的，而不是@Resouce注入的，所以需要手动写一个构造函数
     public RedisIdWorker(StringRedisTemplate stringRedisTemplate) {
         this.stringRedisTemplate = stringRedisTemplate;
     }
@@ -35,7 +37,10 @@ public class RedisIdWorker {
         // 2.1.获取当前日期，精确到天
         String date = now.format(DateTimeFormatter.ofPattern("yyyy:MM:dd"));
         // 2.2 自增长
-        long count = stringRedisTemplate.opsForValue().increment("icr:" + keyPrefix + ":" + date);
+        Long count = stringRedisTemplate.opsForValue().increment("icr:" + keyPrefix + ":" + date);
+        if (count == null) {
+            return Result.fail("获取序列号失败").getTotal();
+        }
         // 3. 拼接
         return timestamp<< COUNT_BITS | count;
 
