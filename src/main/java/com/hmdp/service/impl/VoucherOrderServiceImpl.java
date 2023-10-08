@@ -7,10 +7,12 @@ import com.hmdp.entity.VoucherOrder;
 import com.hmdp.mapper.VoucherOrderMapper;
 import com.hmdp.service.ISeckillVoucherService;
 import com.hmdp.service.IVoucherOrderService;
-import com.hmdp.service.IVoucherService;
 import com.hmdp.utils.RedisIdWorker;
 import com.hmdp.utils.SimpleRedisLock;
 import com.hmdp.utils.UserHolder;
+import lombok.extern.slf4j.Slf4j;
+import org.redisson.api.RLock;
+import org.redisson.api.RedissonClient;
 import org.springframework.aop.framework.AopContext;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
@@ -26,6 +28,7 @@ import java.time.LocalDateTime;
  * @author kixuan
  * @since 2021-12-22
  */
+@Slf4j
 @Service
 public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, VoucherOrder> implements IVoucherOrderService {
 
@@ -35,6 +38,9 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
 
     @Resource
     private StringRedisTemplate stringRedisTemplate;
+
+    @Resource
+    private RedissonClient redissonClient;
 
     @Resource
     private RedisIdWorker redisIdWorker;
@@ -56,6 +62,7 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
         Long userId = UserHolder.getUser().getId();
         // 之前的：没有考虑集群模式下的锁问题
         // 通过userId控制锁的粒度，只有相同用户才会加锁
+        // synchronized是java内置的一个线程同步关键字，可以卸载需要同步的对象、方法或者特定的代码块中
         // intern()方法是将字符串放入常量池中，这样相同的字符串就会指向同一个对象，从而实现锁的粒度控制
         // synchronized (userId.toString().intern()) {
         //     // 通过AopContext.currentProxy()获取代理对象，从而实现事务控制
@@ -64,20 +71,23 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
         // }
 
         // 完善：考虑集群模式下的锁问题
-        //创建锁对象
-        SimpleRedisLock lock = new SimpleRedisLock("order:" + userId, stringRedisTemplate);
+        // 创建锁对象
+        // 这里修改成了redisson的分布式锁
+        // SimpleRedisLock lock = new SimpleRedisLock("order:" + userId, stringRedisTemplate);
+        RLock lock = redissonClient.getLock("lock:order:" + userId);
+
         //获取锁对象
-        boolean isLock = lock.tryLock(1200);
+        boolean isLock = lock.tryLock();
         //加锁失败
         if (!isLock) {
             return Result.fail("不允许重复下单");
         }
+        // 这里就是为了调用createVoucherOrder方法，但是要考虑到事务的问题，所以要通过代理对象来调用
         try {
             //获取代理对象(事务)
             IVoucherOrderService proxy = (IVoucherOrderService) AopContext.currentProxy();
             return proxy.createVoucherOrder(voucherId);
         } finally {
-            //释放锁
             lock.unlock();
         }
     }
