@@ -20,7 +20,7 @@
 - 基础篇：P1-P22  3h59m
 - 实战篇：P24-P95	19h40m
   - 短信登录：24-34  2h20m（✔）
-  - 商户查询：35-47  3h22m
+  - 商户查询：35-47  3h22m（✔）
   - 优惠券秒杀：48-77 8h27m
   - 达人探店：78-81 1h9m（✔）
   - 好友关注：82-87 1h56m（✔）
@@ -33,7 +33,6 @@
 
 1. 拦截器要画个图
 1. 一人一单感觉也需要
-1. 分布式锁的小总结
 
 
 ## 启动项目
@@ -1736,7 +1735,419 @@ public class RedissonConfig {
 
 ## 优化秒杀
 
+### 1、异步秒杀思路
+
+下单流程步骤：查询优惠卷 -- 判断秒杀库存是否足够 -- 查询订单 -- 校验是否是一人一单 -- 扣减库存 -- 创建订单
+
+在这六步操作中，又有很多操作是要去操作数据库的，而且还是一个线程串行执行， 这样就会导致我们的程序执行的很慢，所以我们需要**异步程序执行**
+
+异步程序执行流程：
+
+![image-20231008163227251](https://cdn.jsdelivr.net/gh/kixuan/PicGo/images/image-20231008163227251.png)
+
+
+
+当用户下单之后，**判断库存是否充足只需要去redis中去根据key找对应的value是否大于0即可**，如果不充足，则直接结束，如果充足，继续在redis中判断用户是否可以下单
+
+![image-20231008163525158](https://cdn.jsdelivr.net/gh/kixuan/PicGo/images/image-20231008163525158.png)
+
+
+
+如果set集合中没有这条数据，说明他可以下单，如果set集合中没有这条记录，则将userId和优惠卷存入到redis中，并且返回0，我们可以**使用lua语言来操作保证整个过程的原子性**
+
+![image-20231008162950201](https://cdn.jsdelivr.net/gh/kixuan/PicGo/images/image-20231008162950201.png)
+
+
+
+### 2、Redis完成秒杀资格判断
+
+需求：
+
+* 新增秒杀优惠券的同时，将优惠券信息保存到Redis中
+* 基于Lua脚本，判断秒杀库存、一人一单，决定用户是否抢购成功
+* 如果抢购成功，将优惠券id和用户id封装后存入阻塞队列
+* 开启线程任务，不断从阻塞队列中获取信息，实现异步下单功能
+
+代码实现：
+
+1、seckill.lua
+
+```lua
+-- 秒杀优化需求二：基于Lua脚本，判断秒杀库存、一人一单，决定用户是否有购买资格
+-- 1.参数列表
+-- 1.1.优惠券id
+local voucherId = ARGV[1]
+-- 1.2.用户id
+local userId = ARGV[2]
+-- 1.3.订单id
+local orderId = ARGV[3]
+
+-- 2.数据key
+-- 2.1.库存key  ..lua的字符串拼接
+local stockKey = 'seckill:stock:' .. voucherId
+-- 2.2.订单key
+local orderKey = 'seckill:order:' .. voucherId
+
+-- 3.脚本业务
+-- 3.1.判断库存是否充足 get stockKey  tonumber()将字符串转换为数字
+if(tonumber(redis.call('get', stockKey)) <= 0) then
+    -- 3.2.库存不足，返回1
+    return 1
+end
+-- 3.2.判断用户是否下单 SISMEMBER：判断set集合中是否存在某个元素
+if(redis.call('sismember', orderKey, userId) == 1) then
+    -- 3.3.存在，说明是重复下单，返回2
+    return 2
+end
+-- 3.4.扣库存 incrby stockKey -1
+redis.call('incrby', stockKey, -1)
+-- 3.5.下单（保存用户）sadd orderKey userId
+redis.call('sadd', orderKey, userId)
+-- 3.6.发送消息到队列中， XADD stream.orders * k1 v1 k2 v2 ...
+redis.call('xadd', 'stream.orders', '*', 'userId', userId, 'voucherId', voucherId, 'id', orderId)
+
+return 0
+```
+
+2、VoucherOrderServiceImpl
+
+```java
+@Override
+public Result seckillVoucher(Long voucherId) {
+    //获取用户
+    Long userId = UserHolder.getUser().getId();
+    long orderId = redisIdWorker.nextId("order");
+    // 1.执行lua脚本
+    Long result = stringRedisTemplate.execute(
+            SECKILL_SCRIPT,
+            Collections.emptyList(),
+            voucherId.toString(), userId.toString(), String.valueOf(orderId)
+    );
+    int r = result.intValue();
+    // 2.判断结果是否为0
+    if (r != 0) {
+        // 2.1.不为0 ，代表没有购买资格
+        return Result.fail(r == 1 ? "库存不足" : "不能重复下单");
+    }
+    //TODO 保存阻塞队列
+    // 3.返回订单id
+    return Result.ok(orderId);
+}
+```
+
+
+
+### 3、基于阻塞队列实现秒杀优化
+
+代码实现：VoucherOrderServiceImpl【sorry我没太搞懂这里在干嘛、、、】
+
+```java
+//异步处理线程池
+private static final ExecutorService SECKILL_ORDER_EXECUTOR = Executors.newSingleThreadExecutor();
+
+//在类初始化之后执行，因为当这个类初始化好了之后，随时都是有可能要执行的
+@PostConstruct
+private void init() {
+   SECKILL_ORDER_EXECUTOR.submit(new VoucherOrderHandler());
+}
+// 用于线程池处理的任务
+// 当初始化完毕后，就会去从对列中去拿信息
+ private class VoucherOrderHandler implements Runnable{
+
+        @Override
+        public void run() {
+            while (true){
+                try {
+                    // 1.获取队列中的订单信息
+                    VoucherOrder voucherOrder = orderTasks.take();
+                    // 2.创建订单
+                    handleVoucherOrder(voucherOrder);
+                } catch (Exception e) {
+                    log.error("处理订单异常", e);
+                }
+          	 }
+        }
+     
+       private void handleVoucherOrder(VoucherOrder voucherOrder) {
+            //1.获取用户，注意是从voucherOrder中取，因为现在是在多线程中
+            Long userId = voucherOrder.getUserId();
+            // 2.创建锁对象
+            RLock redisLock = redissonClient.getLock("lock:order:" + userId);
+            // 3.尝试获取锁
+            boolean isLock = redisLock.lock();
+            // 4.判断是否获得锁成功
+            if (!isLock) {
+                // 获取锁失败，直接返回失败或者重试
+                log.error("不允许重复下单！");
+                return;
+            }
+            try {
+				//注意：由于是spring的事务是放在threadLocal中，此时的是多线程，事务会失效
+                proxy.createVoucherOrder(voucherOrder);
+            } finally {
+                // 释放锁
+                redisLock.unlock();
+            }
+    }
+     //a
+	private BlockingQueue<VoucherOrder> orderTasks =new  ArrayBlockingQueue<>(1024 * 1024);
+
+    @Override
+    public Result seckillVoucher(Long voucherId) {
+        Long userId = UserHolder.getUser().getId();
+        long orderId = redisIdWorker.nextId("order");
+        // 1.执行lua脚本
+        Long result = stringRedisTemplate.execute(
+                SECKILL_SCRIPT,
+                Collections.emptyList(),
+                voucherId.toString(), userId.toString(), String.valueOf(orderId)
+        );
+        int r = result.intValue();
+        // 2.判断结果是否为0
+        if (r != 0) {
+            // 2.1.不为0 ，代表没有购买资格
+            return Result.fail(r == 1 ? "库存不足" : "不能重复下单");
+        }
+        VoucherOrder voucherOrder = new VoucherOrder();
+        // 2.3.订单id
+        long orderId = redisIdWorker.nextId("order");
+        voucherOrder.setId(orderId);
+        // 2.4.用户id
+        voucherOrder.setUserId(userId);
+        // 2.5.代金券id
+        voucherOrder.setVoucherId(voucherId);
+        // 2.6.放入阻塞队列
+        orderTasks.add(voucherOrder);
+        //3.获取代理对象
+         proxy = (IVoucherOrderService)AopContext.currentProxy();
+        //4.返回订单id
+        return Result.ok(orderId);
+    }
+     
+      @Transactional
+    public  void createVoucherOrder(VoucherOrder voucherOrder) {
+        Long userId = voucherOrder.getUserId();
+        // 5.1.查询订单
+        int count = query().eq("user_id", userId).eq("voucher_id", voucherOrder.getVoucherId()).count();
+        // 5.2.判断是否存在
+        if (count > 0) {
+            // 用户已经购买过了
+           log.error("用户已经购买过了");
+           return ;
+        }
+
+        // 6.扣减库存
+        boolean success = seckillVoucherService.update()
+                .setSql("stock = stock - 1") // set stock = stock - 1
+                .eq("voucher_id", voucherOrder.getVoucherId()).gt("stock", 0) // where id = ? and stock > 0
+                .update();
+        if (!success) {
+            // 扣减失败
+            log.error("库存不足");
+            return ;
+        }
+        save(voucherOrder);
+ 
+    }
+
+```
+
+
+
+**小总结：**
+
+秒杀业务的优化思路是什么？
+
+* 先利用Redis完成库存余量、一人一单判断，完成抢单业务
+* 再将下单业务放入阻塞队列，利用独立线程异步下单
+* 基于阻塞队列的异步秒杀存在哪些问题？
+  * 内存限制问题
+  * 数据安全问题
+
+所以我们请出redis消息队列(ˉ▽ˉ)
+
+
+
 ## redis消息队列
+
+### 1、认识消息队列
+
+什么是消息队列：字面意思就是存放消息的队列。最简单的消息队列模型包括3个角色：
+
+* 消息队列：存储和管理消息，也被称为消息代理（Message Broker）
+* 生产者：发送消息到消息队列
+* 消费者：从消息队列获取消息并处理消息
+
+
+
+![image-20231009083413255](https://cdn.jsdelivr.net/gh/kixuan/PicGo/images/image-20231009083413255.png)
+
+
+
+使用队列的好处在于 **解耦：**所谓解耦在我们秒杀中就是：我们下单之后，利用redis去进行校验下单条件，再通过队列把消息发送出去，然后再启动一个线程去消费这个消息，完成解耦，同时也加快我们的响应速度。
+
+
+
+### 2、基于List实现消息队列
+
+Redis的list数据结构是一个双向链表，很容易模拟出队列效果。
+
+![image-20231009083501487](https://cdn.jsdelivr.net/gh/kixuan/PicGo/images/image-20231009083501487.png)
+
+队列是入口和出口不在一边，因此我们可以利用：LPUSH 结合 RPOP、或者 RPUSH 结合 LPOP来实现。
+不过要注意的是，当队列中没有消息时RPOP或LPOP操作会返回null，并不像JVM的阻塞队列那样会阻塞并等待消息。因此这里应该使用BRPOP或者BLPOP来实现阻塞效果。
+
+基于List的消息队列有哪些优缺点？
+优点：
+
+* 利用Redis存储，不受限于JVM内存上限
+* 基于Redis的持久化机制，数据安全性有保证
+* 可以满足消息有序性
+
+缺点：
+
+* 无法避免消息丢失
+* 只支持单消费者
+
+
+
+### 3、基于PubSub的消息队列
+
+消费者可以订阅一个或多个channel，生产者向对应channel发送消息后，所有订阅者都能收到相关消息。
+
+ SUBSCRIBE channel [channel] ：订阅一个或多个频道
+ PUBLISH channel msg ：向一个频道发送消息
+ PSUBSCRIBE pattern[pattern] ：订阅与pattern格式匹配的所有频道
+
+![image-20231009083532234](https://cdn.jsdelivr.net/gh/kixuan/PicGo/images/image-20231009083532234.png)
+
+基于PubSub的消息队列有哪些优缺点？
+优点：
+
+* 采用发布订阅模型，支持多生产、多消费
+
+缺点：
+
+* 不支持数据持久化
+* 无法避免消息丢失
+* 消息堆积有上限，超出时数据丢失
+
+
+
+### 4、基于Stream的消息队列
+
+#### 发送消息：XADD
+
+![image-20231009083703604](https://cdn.jsdelivr.net/gh/kixuan/PicGo/images/image-20231009083703604.png)
+
+示例：返回时间戳和序号
+
+![image-20231009083842152](https://cdn.jsdelivr.net/gh/kixuan/PicGo/images/image-20231009083842152.png)
+
+#### 读取消息：XREAD
+
+![image-20231009083810976](https://cdn.jsdelivr.net/gh/kixuan/PicGo/images/image-20231009083810976.png)
+
+示例
+
+![image-20231009084454108](https://cdn.jsdelivr.net/gh/kixuan/PicGo/images/image-20231009084454108.png)
+
+XREAD阻塞方式，读取最新的消息：
+
+![1653577659166](https://cdn.jsdelivr.net/gh/kixuan/PicGo/images/1653577659166.png)
+
+在业务开发中，我们可以循**环的调用XREAD阻塞方式来查询最新消息**，从而实现**持续监听队列**的效果，伪代码如下：
+
+![1653577689129](https://cdn.jsdelivr.net/gh/kixuan/PicGo/images/1653577689129.png)
+
+注意：当我们**指定起始ID为$时**，代表读取最新的消息，如果我们处理一条消息的过程中，又有超过1条以上的消息到达队列，则**下次获取时也只能获取到最新的一条，会出现漏读消息的问题**
+
+STREAM类型消息队列的XREAD命令特点：
+
+* 消息可回溯
+* 一个消息可以被多个消费者读取
+* 可以阻塞读取
+* 有消息漏读的风险
+
+
+
+### 5、基于Stream的消息队列-消费者组
+
+消费者组（Consumer Group）：将多个消费者划分到一个组中，监听同一个队列。具备下列特点：
+
+![image-20231009085527833](https://cdn.jsdelivr.net/gh/kixuan/PicGo/images/image-20231009085527833.png)
+
+
+
+相关语法：
+
+```java
+// 创建消费者组
+XGROUP CREATE key groupName ID[MKSTREAM]
+// - key：队列名称
+// - groupName：消费者组名称
+// - ID：起始ID标示，$代表队列中最后一个消息，0则代表队列中第一个消息
+// - MKSTREAM：队列不存在时自动创建队列
+    
+    
+//  删除指定的消费者组
+XGROUP DESTORY key groupName
+
+// 给指定的消费者组添加消费者
+XGROUP CREATECONSUMER key groupname consumername
+    
+// 删除消费者组中的指定消费者
+XGROUP DELCONSUMER key groupname consumername
+    
+    
+// 从消费者组读取消息
+XREADGROUP GROUP group consumer [COUNT count] [BLOCK milliseconds] [NOACK] STREAMS key [key ...] ID [ID ...]
+    
+ex：XPENDING mystream group55 - + 10  // - + 表示all
+//  group：消费组名称
+// consumer：消费者名称，如果消费者不存在，会自动创建一个消费者
+// count：本次查询的最大数量
+// BLOCK milliseconds：当没有消息时最长等待时间
+// NOACK：无需手动ACK，获取到消息后自动确认【一般不配置】
+// STREAMS key：指定队列名称
+// ID：获取消息的起始ID：
+  // ">"：从下一个未消费的消息开始
+  // 其它：根据指定id从pending-list中获取已消费但未确认的消息，例如0，是从pending-list中的第一个消息开始
+    
+    
+// 确认消息
+XACK key group id [id ...]
+    
+// 获取pending-list的消息
+XPENDING key group [[IDLE min-idle-time] start end count [consumer]]
+    //- IDLE：确认时间
+    //- start&end：确认消息的起始和末尾
+    // - count：确认数量
+```
+
+
+
+消费者监听消息的基本思路：【伪代码】
+
+![image-20231009090819195](https://cdn.jsdelivr.net/gh/kixuan/PicGo/images/image-20231009090819195.png)
+
+
+
+STREAM类型消息队列的XREADGROUP命令特点：
+
+* 消息可回溯
+* 可以多消费者争抢消息，加快消费速度
+* 可以阻塞读取
+* 没有消息漏读的风险
+* 有消息确认机制，保证消息至少被消费一次
+
+
+
+**全部对比：**
+
+![image-20231009085728360](https://cdn.jsdelivr.net/gh/kixuan/PicGo/images/image-20231009085728360.png)
+
+
 
 
 
