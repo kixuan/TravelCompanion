@@ -21,7 +21,7 @@
 - 实战篇：P24-P95	19h40m
   - 短信登录：24-34  2h20m（✔）
   - 商户查询：35-47  3h22m（✔）
-  - 优惠券秒杀：48-77 8h27m
+  - 优惠券秒杀：48-77 8h27m（✔）
   - 达人探店：78-81 1h9m（✔）
   - 好友关注：82-87 1h56m（✔）
   - 附近商户：88-90 1h3m（✔）
@@ -2345,6 +2345,59 @@ return 0
     }
 }
 ```
+
+
+
+### 7、tip：保存1k个token到JMeter中
+
+Test
+
+```java
+/**
+     * 在Redis中保存1000个用户信息并将其token写入文件中，方便测试多人秒杀业务
+     */
+    @Test
+    void testMultiLogin() throws IOException {
+        List<User> userList = userService.lambdaQuery().last("limit 1000").list();
+        for (User user : userList) {
+            String token = UUID.randomUUID().toString();
+            UserDTO userDTO = BeanUtil.copyProperties(user, UserDTO.class);
+            Map<String, Object> userMap = BeanUtil.beanToMap(userDTO, new HashMap<>(),
+                    CopyOptions.create().ignoreNullValue()
+                            .setFieldValueEditor((fieldName, fieldValue) -> fieldValue.toString()));
+            String tokenKey = LOGIN_USER_KEY + token;
+            stringRedisTemplate.opsForHash().putAll(tokenKey, userMap);
+            stringRedisTemplate.expire(tokenKey, 30, TimeUnit.MINUTES);
+        }
+        Set<String> keys = stringRedisTemplate.keys(LOGIN_USER_KEY + "*");
+        @Cleanup FileWriter fileWriter = new FileWriter(System.getProperty("user.dir") + "\\tokens.txt");
+        @Cleanup BufferedWriter bufferedWriter = new BufferedWriter(fileWriter);
+        assert keys != null;
+        for (String key : keys) {
+            String token = key.substring(LOGIN_USER_KEY.length());
+            String text = token + "\n";
+            bufferedWriter.write(text);
+        }
+    }
+```
+
+
+
+JMeter配置如下，在CSV数据文件设置处设置token
+
+![image-20231010145243720](https://cdn.jsdelivr.net/gh/kixuan/PicGo/images/image-20231010145243720.png)
+
+注意`HTTP信息头管理器`也要把authorization换成${token}变量
+
+![image-20231010145309943](https://cdn.jsdelivr.net/gh/kixuan/PicGo/images/image-20231010145309943.png)
+
+
+
+结果：实现了抢购且没有超卖等问题（但是好像也没有快很多∑( 口 ||）
+
+![image-20231010145135860](https://cdn.jsdelivr.net/gh/kixuan/PicGo/images/image-20231010145135860.png)
+
+
 
 
 
