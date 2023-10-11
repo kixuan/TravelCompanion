@@ -21,7 +21,7 @@
 - 实战篇：P24-P95	19h40m
   - 短信登录：24-34  2h20m（✔）
   - 商户查询：35-47  3h22m（✔）
-  - 优惠券秒杀：48-77 8h27m
+  - 优惠券秒杀：48-77 8h27m（✔）
   - 达人探店：78-81 1h9m（✔）
   - 好友关注：82-87 1h56m（✔）
   - 附近商户：88-90 1h3m（✔）
@@ -2143,9 +2143,259 @@ STREAM类型消息队列的XREADGROUP命令特点：
 
 
 
-**全部对比：**
+**全部对比：【stream最好！】**
 
 ![image-20231009085728360](https://cdn.jsdelivr.net/gh/kixuan/PicGo/images/image-20231009085728360.png)
+
+
+
+### 6、基于Redis的Stream结构作为消息队列，实现异步秒杀下单
+
+需求：
+
+* 创建一个Stream类型的消息队列，名为stream.orders
+* 修改之前的秒杀下单Lua脚本，在认定有抢购资格后，直接向stream.orders中添加消息，内容包含voucherId、userId、orderId
+* 项目启动时，开启一个线程任务，尝试获取stream.orders中的消息，完成下单
+
+代码实现：
+
+1、seckill.lua
+
+```lua
+-- 秒杀优化需求二：基于Lua脚本，判断秒杀库存、一人一单，决定用户是否有购买资格
+-- 1.参数列表
+-- 1.1.优惠券id
+local voucherId = ARGV[1]
+-- 1.2.用户id
+local userId = ARGV[2]
+-- 1.3.订单id
+local orderId = ARGV[3]
+
+-- 2.数据key
+-- 2.1.库存key  ..lua的字符串拼接
+local stockKey = 'seckill:stock:' .. voucherId
+-- 2.2.订单key
+local orderKey = 'seckill:order:' .. voucherId
+
+-- 3.脚本业务
+-- 3.1.判断库存是否充足 get stockKey  tonumber()将字符串转换为数字
+if(tonumber(redis.call('get', stockKey)) <= 0) then
+    -- 3.2.库存不足，返回1
+    return 1
+end
+-- 3.2.判断用户是否下单 SISMEMBER：判断set集合中是否存在某个元素
+if(redis.call('sismember', orderKey, userId) == 1) then
+    -- 3.3.存在，说明是重复下单，返回2
+    return 2
+end
+-- 3.4.扣库存 incrby stockKey -1
+redis.call('incrby', stockKey, -1)
+-- 3.5.下单（保存用户）sadd orderKey userId
+redis.call('sadd', orderKey, userId)
+
+return 0
+```
+
+
+
+2、VoucherOrderServiceImpl
+
+```java
+  private static final DefaultRedisScript<Long> SECKILL_SCRIPT;
+
+    static {
+        SECKILL_SCRIPT = new DefaultRedisScript<>();
+        SECKILL_SCRIPT.setLocation(new ClassPathResource("seckill.lua"));
+        SECKILL_SCRIPT.setResultType(Long.class);
+    }
+
+
+    //异步处理线程池
+    private static final ExecutorService SECKILL_ORDER_EXECUTOR = Executors.newSingleThreadExecutor();
+
+    IVoucherOrderService proxy;
+
+
+    //在类初始化之后执行，因为当这个类初始化好了之后，随时都是有可能要执行的
+    @PostConstruct
+    private void init() {
+        SECKILL_ORDER_EXECUTOR.submit(new VoucherOrderHandler());
+    }
+
+    // 用于线程池处理的任务
+    // 当初始化完毕后，就会去从对列中去拿信息
+    private class VoucherOrderHandler implements Runnable, com.hmdp.service.impl.VoucherOrderHandler {
+        @Override
+        public void run() {
+            while (true) {
+                try {
+                    // 之前：1.获取阻塞队列中的订单信息
+                    // VoucherOrder voucherOrder = orderTasks.take();
+                    // 2.创建订单
+                    // handleVoucherOrder(voucherOrder);
+
+                    // 现在: 1.获取消息队列中的订单信息 XREADGROUP GROUP g1 c1 COUNT 1 BLOCK 2000 STREAMS s1 >
+                    List<MapRecord<String, Object, Object>> list = stringRedisTemplate.opsForStream().read(Consumer.from("g1", "c1"), StreamReadOptions.empty().count(1).block(Duration.ofSeconds(2)), StreamOffset.create("stream.orders", ReadOffset.lastConsumed()));
+                    // 2.判断订单信息是否为空
+                    if (list == null || list.isEmpty()) {
+                        // 如果为null，说明没有消息，继续下一次循环
+                        continue;
+                    }
+                    // 解析数据   string就是消息id
+                    MapRecord<String, Object, Object> record = list.get(0);
+                    Map<Object, Object> value = record.getValue();
+                    // 把map转成order对象
+                    VoucherOrder voucherOrder = BeanUtil.fillBeanWithMap(value, new VoucherOrder(), true);
+                    // 3.创建订单
+                    createVoucherOrder(voucherOrder);
+                    // 4.确认消息 XACK
+                    stringRedisTemplate.opsForStream().acknowledge("s1", "g1", record.getId());
+
+                } catch (Exception e) {
+                    log.error("处理订单异常", e);
+                    // 处理异常消息
+                    handlePendingList();
+                }
+            }
+        }
+
+
+        private void handlePendingList() {
+            while (true) {
+                try {
+                    // 1.获取pending-list中的订单信息 XREADGROUP GROUP g1 c1 COUNT 1 BLOCK 2000 STREAMS s1 0
+                    // 注意这里是0
+                    List<MapRecord<String, Object, Object>> list = stringRedisTemplate.opsForStream().read(Consumer.from("g1", "c1"), StreamReadOptions.empty().count(1), StreamOffset.create("stream.orders", ReadOffset.from("0")));
+                    // 2.判断订单信息是否为空
+                    if (list == null || list.isEmpty()) {
+                        // 如果为null，说明没有异常消息，结束循环
+                        break;
+                    }
+                    // 解析数据
+                    MapRecord<String, Object, Object> record = list.get(0);
+                    Map<Object, Object> value = record.getValue();
+                    VoucherOrder voucherOrder = BeanUtil.fillBeanWithMap(value, new VoucherOrder(), true);
+                    // 3.创建订单
+                    createVoucherOrder(voucherOrder);
+                    // 4.确认消息 XACK
+                    stringRedisTemplate.opsForStream().acknowledge("s1", "g1", record.getId());
+                } catch (Exception e) {
+                    log.error("处理pending订单异常", e);
+                    try {
+                        Thread.sleep(20);
+                    } catch (InterruptedException ex) {
+                        throw new RuntimeException(ex);
+                    }
+
+                }
+            }
+        }
+
+    }
+  @Override
+    public Result seckillVoucher(Long voucherId) {
+        Long userId = UserHolder.getUser().getId();
+        // 订单id
+        long orderId = redisIdWorker.nextId("order");
+        // 1.执行lua脚本
+        Long result = stringRedisTemplate.execute(SECKILL_SCRIPT, Collections.emptyList(), voucherId.toString(), userId.toString(), String.valueOf(orderId), String.valueOf(orderId));
+        int r = result.intValue();
+        // 2.判断结果是否为0
+        if (r != 0) {
+            // 2.1.不为0 ，代表没有购买资格
+            return Result.fail(r == 1 ? "库存不足" : "不能重复下单");
+        }
+        // VoucherOrder voucherOrder = new VoucherOrder();
+        // voucherOrder.setId(orderId);
+        // // 2.4.用户id
+        // voucherOrder.setUserId(userId);
+        // // 2.5.代金券id
+        // voucherOrder.setVoucherId(voucherId);
+        // // 2.6.放入阻塞队列
+        // orderTasks.add(voucherOrder);
+        //3.获取代理对象
+        proxy = (IVoucherOrderService) AopContext.currentProxy();
+        //4.返回订单id
+        return Result.ok(orderId);
+    }
+
+    @Transactional
+    public void createVoucherOrder(VoucherOrder voucherOrder) {
+        Long userId = voucherOrder.getUserId();
+        // 5.1.查询订单
+        int count = query().eq("user_id", userId).eq("voucher_id", voucherOrder.getVoucherId()).count();
+        // 5.2.判断是否存在
+        if (count > 0) {
+            // 用户已经购买过了
+            log.error("用户已经购买过了");
+            return;
+        }
+
+        // 6.扣减库存
+        boolean success = seckillVoucherService.update().setSql("stock = stock - 1") // set stock = stock - 1
+                .eq("voucher_id", voucherOrder.getVoucherId()).gt("stock", 0) // where id = ? and stock > 0
+                .update();
+        if (!success) {
+            // 扣减失败
+            log.error("库存不足");
+            return;
+        }
+        save(voucherOrder);
+
+    }
+}
+```
+
+
+
+### 7、tip：保存1k个token到JMeter中
+
+Test
+
+```java
+/**
+     * 在Redis中保存1000个用户信息并将其token写入文件中，方便测试多人秒杀业务
+     */
+    @Test
+    void testMultiLogin() throws IOException {
+        List<User> userList = userService.lambdaQuery().last("limit 1000").list();
+        for (User user : userList) {
+            String token = UUID.randomUUID().toString();
+            UserDTO userDTO = BeanUtil.copyProperties(user, UserDTO.class);
+            Map<String, Object> userMap = BeanUtil.beanToMap(userDTO, new HashMap<>(),
+                    CopyOptions.create().ignoreNullValue()
+                            .setFieldValueEditor((fieldName, fieldValue) -> fieldValue.toString()));
+            String tokenKey = LOGIN_USER_KEY + token;
+            stringRedisTemplate.opsForHash().putAll(tokenKey, userMap);
+            stringRedisTemplate.expire(tokenKey, 30, TimeUnit.MINUTES);
+        }
+        Set<String> keys = stringRedisTemplate.keys(LOGIN_USER_KEY + "*");
+        @Cleanup FileWriter fileWriter = new FileWriter(System.getProperty("user.dir") + "\\tokens.txt");
+        @Cleanup BufferedWriter bufferedWriter = new BufferedWriter(fileWriter);
+        assert keys != null;
+        for (String key : keys) {
+            String token = key.substring(LOGIN_USER_KEY.length());
+            String text = token + "\n";
+            bufferedWriter.write(text);
+        }
+    }
+```
+
+
+
+JMeter配置如下，在CSV数据文件设置处设置token
+
+![image-20231010145243720](https://cdn.jsdelivr.net/gh/kixuan/PicGo/images/image-20231010145243720.png)
+
+注意`HTTP信息头管理器`也要把authorization换成${token}变量
+
+![image-20231010145309943](https://cdn.jsdelivr.net/gh/kixuan/PicGo/images/image-20231010145309943.png)
+
+
+
+结果：实现了抢购且没有超卖等问题（但是好像也没有快很多∑( 口 ||）
+
+![image-20231010145135860](https://cdn.jsdelivr.net/gh/kixuan/PicGo/images/image-20231010145135860.png)
 
 
 
