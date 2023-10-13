@@ -45,22 +45,32 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
 
 
     /**
-     * @Description: 通过id查询
-     * @Param: [id]
-     * @return: com.hmdp.dto.Result
+     * 保存商铺信息
      */
+    @Override
+    public Long saveShop(Shop shop) {
+        // 写入数据库
+        save(shop);
+        // 写入redis并使用逻辑过期解决缓存击穿问题
+        Long shopId = shop.getId();
+        cacheCilent.setWithLogicalExpire(CACHE_SHOP_KEY, shopId, CACHE_SHOP_TTL, TimeUnit.MINUTES);
+        return shopId;
+    }
 
+    /**
+     * 通过id查询
+     */
     public Result queryById(Long id) {
         // 解决缓存穿透
-        // Shop shop = cacheCilent
-        //         .queryWithPassThrough(CACHE_SHOP_KEY,id,Shop.class,this::getById,CACHE_SHOP_TTL,TimeUnit.MINUTES);
+        Shop shop = cacheCilent
+                .queryWithPassThrough(CACHE_SHOP_KEY, id, Shop.class, this::getById, CACHE_SHOP_TTL, TimeUnit.MINUTES);
 
         // 解决缓存击穿——互斥锁
         // Shop shop = cacheCilent
         //                  .queryWithMutex(CACHE_SHOP_KEY,id,Shop.class,this::getById,CACHE_SHOP_TTL,TimeUnit.MINUTES);
 
         // 解决缓存击穿——逻辑过期
-        Shop shop = cacheCilent.queryWithLogicalExpire(CACHE_SHOP_KEY, id, Shop.class, this::getById, CACHE_SHOP_TTL, TimeUnit.MINUTES);
+        // Shop shop = cacheCilent.queryWithLogicalExpire(CACHE_SHOP_KEY, id, Shop.class, this::getById, CACHE_SHOP_TTL, TimeUnit.MINUTES);
 
 
         if (shop == null) {
@@ -90,6 +100,9 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
     // }
 
 
+    /**
+     * 更新商铺信息
+     */
     @Override
     @Transactional //保证原⼦性
     public Result update(Shop shop) {
@@ -102,6 +115,9 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
         return Result.ok();
     }
 
+    /**
+     * 根据商铺类型分页查询商铺信息
+     */
     @Override
     public Result queryShopByType(Integer typeId, Integer current, Double x, Double y) {
         // 1.判断是否需要根据坐标查询
@@ -131,6 +147,7 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
         if (results == null) {
             return Result.ok(Collections.emptyList());
         }
+        //这里感觉好复杂，这个类型转换、、、
         List<GeoResult<RedisGeoCommands.GeoLocation<String>>> list = results.getContent();
         if (list.size() <= from) {
             // 没有下一页了，结束

@@ -61,6 +61,9 @@ public class UserController {
         return userService.logout(request);
     }
 
+    /**
+     * 获取当前登录的用户UserDTO
+     */
     @GetMapping("/me")
     public Result me() {
         //  获取当前登录的用户并返回
@@ -68,6 +71,9 @@ public class UserController {
         return Result.ok(user);
     }
 
+    /**
+     * 保存用户详情
+     */
     @GetMapping("/info/{id}")
     public Result info(@PathVariable("id") Long userId) {
         // 查询详情
@@ -96,11 +102,17 @@ public class UserController {
         return Result.ok(userDTO);
     }
 
+    /**
+     * 进行签到
+     */
     @PostMapping("/sign/me")
     public Result sign(){
         return userService.sign();
     }
 
+    /**
+     * 统计签到次数
+     */
     @GetMapping("/sign/count")
     public Result signCount(){
         return userService.signCount();

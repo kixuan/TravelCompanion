@@ -140,7 +140,10 @@ public class BlogServiceImpl extends ServiceImpl<BlogMapper, Blog> implements IB
         if (top5 == null || top5.isEmpty()) {
             return Result.ok(Collections.emptyList());
         }
-        // 2.解析出其中的用户id
+        // 2.解析出其中的用户id【StringList转换成LongList】
+        // .stream()是把Set<String>转换成Stream<String>
+        // .map(Long::valueOf)通过应用Long类的静态方法valueOf将每个元素转换为Long类型，把Stream<String>转换成Stream<Long>
+        // .collect(Collectors.toList())通过Collectors工具类的toList方法将Stream<Long>转换成List<Long>
         List<Long> ids = top5.stream().map(Long::valueOf).collect(Collectors.toList());
         String idStr = StrUtil.join(",", ids);
 
@@ -206,7 +209,8 @@ public class BlogServiceImpl extends ServiceImpl<BlogMapper, Blog> implements IB
 
         // 2. 查询自己的收件箱
         String key = FEED_KEY + userId;
-        Set<ZSetOperations.TypedTuple<String>> typedTuples = stringRedisTemplate.opsForZSet().reverseRangeByScoreWithScores(key, 0, max, offset, 2);
+        Set<ZSetOperations.TypedTuple<String>> typedTuples = stringRedisTemplate.opsForZSet()
+                .reverseRangeByScoreWithScores(key, 0, max, offset, 2);
         if (typedTuples == null || typedTuples.isEmpty()) {
             return Result.ok(Collections.emptyList());
         }

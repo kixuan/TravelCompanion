@@ -16,6 +16,9 @@ import java.util.concurrent.TimeUnit;
 import static com.hmdp.constant.RedisConstants.LOGIN_USER_KEY;
 import static com.hmdp.constant.RedisConstants.LOGIN_USER_TTL;
 
+/**
+ * 刷新token拦截器
+ */
 public class RefreshTokenInterceptor implements HandlerInterceptor {
     private final StringRedisTemplate stringRedisTemplate;
 
@@ -24,6 +27,8 @@ public class RefreshTokenInterceptor implements HandlerInterceptor {
     }
 
     @Override
+    // 这里没有用到response和handler，那为什么还要写呢？
+    // 因为继承了HandlerInterceptor，重写的话也必须参数对应
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
 
         // 1.获取请求头中的token

@@ -26,6 +26,8 @@ import java.time.Duration;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -55,7 +57,7 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
     private RedisIdWorker redisIdWorker;
 
     // 阻塞队列
-    // private final BlockingQueue<VoucherOrder> orderTasks = new ArrayBlockingQueue<>(1024 * 1024);
+    private final BlockingQueue<VoucherOrder> orderTasks = new ArrayBlockingQueue<>(1024 * 1024);
     private static final DefaultRedisScript<Long> SECKILL_SCRIPT;
 
     static {
@@ -244,6 +246,7 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
     //     // synchronized是java内置的一个线程同步关键字，可以卸载需要同步的对象、方法或者特定的代码块中
     //     // intern()方法是将字符串放入常量池中，这样相同的字符串就会指向同一个对象，从而实现锁的粒度控制
     //     // synchronized (userId.toString().intern()) {
+    //     // 如果直接使用this调用方法，调用的是非代理对象，但是事务是靠代理对象生效的，所以我们要拿到代理对象，走代理对象的方法，才能实现事务控制
     //     //     // 通过AopContext.currentProxy()获取代理对象，从而实现事务控制
     //     //     IVoucherOrderService proxy = (IVoucherOrderService) AopContext.currentProxy();
     //     //     return proxy.createVoucherOrder(voucherId);
@@ -259,7 +262,7 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
     //     boolean isLock = lock.tryLock();
     //     //加锁失败
     //     if (!isLock) {
-    //         return Result.fail("不允许重复下单");
+    //         return Result.fail("之前的下单逻辑还在处理/不允许重复下单");
     //     }
     //     // 这里就是为了调用createVoucherOrder方法，但是要考虑到事务的问题，所以要通过代理对象来调用
     //     try {

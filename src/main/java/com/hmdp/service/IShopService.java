@@ -15,6 +15,8 @@ import org.springframework.transaction.annotation.Transactional;
  */
 public interface IShopService extends IService<Shop> {
 
+    Long saveShop(Shop shop);
+
     Result queryById(Long id);
 
     @Transactional
