@@ -22,7 +22,6 @@ import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpSession;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
@@ -34,7 +33,7 @@ import static com.hmdp.constant.RedisConstants.*;
 import static com.hmdp.constant.SystemConstants.USER_NICK_NAME_PREFIX;
 
 /**
- * 服务实现类
+ * 用户服务实现类
  *
  * @author kixuan
  * @since 2023/09/20
@@ -50,11 +49,15 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
     @Resource
     private UserMapper userMapper;
 
+    /**
+     * 发送验证码
+     */
     @Override
     public Result sendCode(String phone) {
 //        1.检验手机号
         if (RegexUtils.isPhoneInvalid(phone)) {
-            //  这里抛出异常和return fail有什么区别吗？———> 有区别，抛出异常会被全局异常处理器捕获，返回fail不会
+            //  这里抛出异常和return fail有什么区别吗？———> 有区别，抛出异常会被全局异常处理器捕获，return fail不会捕获，而是直接退出程序
+            //  java基础很不牢固捏异常的作用都忘了(ˉ▽ˉ；)...
             throw new RuntimeException("手机号格式不正确");
         }
 //        2.生成验证码
@@ -69,6 +72,9 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
         return Result.ok();
     }
 
+    /**
+     * 登录
+     */
     @Override
     public Result login(LoginFormDTO loginForm) {
 //        1.检验手机号  ———>  因为每个请求都是单独的，使用还要再检查一次
@@ -105,9 +111,9 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
         // 因为user的id是long类型的，但是StringRedisTemplate只支持String类型的key-value，因此要需要⾃定义map映射规将user转成map后进⾏hash存储
         // userDTO：要转换为Map的Java对象       new HashMap<>()：存储转换后的Map的容器
         Map<String, Object> userMap = BeanUtil.beanToMap(userDTO, new HashMap<>(),
-                // 忽略userDTO对象中的空值属性，即那些值为null的属性不会被放入userMap中
+                // 调用CopyOptions的方法，忽略userDTO对象中的空值属性，即那些值为null的属性不会被放入userMap中
                 CopyOptions.create().setIgnoreNullValue(true)
-                        // 将属性值放入userMap前，将属性值转换为其字符串表示形式
+                        // 将属性值放入userMap前，将属性值（long的id）转换为其字符串表示形式
                         .setFieldValueEditor((fieldName, fieldValue) -> fieldValue.toString()));
 
 //        5.存储
@@ -119,6 +125,9 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
     }
 
 
+    /**
+     * 退出登录
+     */
     @Override
     public Result logout(HttpServletRequest request) {
         String token = request.getHeader("Authorization");
@@ -131,6 +140,9 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
         return Result.ok();
     }
 
+    /**
+     * 签到功能
+     */
     @Override
     public Result sign() {
         // 1.获取当前登录用户
@@ -148,6 +160,9 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
         return Result.ok();
     }
 
+    /**
+     * 获取签到次数
+     */
     @Override
     public Result signCount() {
         // 1.获取当前登录用户
@@ -201,6 +216,9 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
         return Result.ok(count);
     }
 
+    /**
+     * 根据手机号创建用户
+     */
     private User createUserWithPhone(String phone) {
         User user = new User();
         user.setPhone(phone);

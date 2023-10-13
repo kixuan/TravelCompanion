@@ -16,9 +16,14 @@ public class MvcConfig implements WebMvcConfigurer {
     private StringRedisTemplate stringRedisTemplate;
 
     @Override
-//    添加拦截器
+    // 添加拦截器
     public void addInterceptors(InterceptorRegistry registry) {
-//        登录拦截器
+
+        // token刷新拦截器   order为0，优先级最高
+        registry.addInterceptor(new RefreshTokenInterceptor(stringRedisTemplate))
+                .addPathPatterns("/**").order(0);
+
+        // 登录拦截器
         registry.addInterceptor(new LoginInterceptor(stringRedisTemplate))
                 .excludePathPatterns(
                         "/shop/**",
@@ -30,10 +35,5 @@ public class MvcConfig implements WebMvcConfigurer {
                         "/user/login",
                         "/user/me"
                 ).order(1);
-
-
-//        token刷新拦截器   order为0，最高
-        registry.addInterceptor(new RefreshTokenInterceptor(stringRedisTemplate))
-                .addPathPatterns("/**").order(0);
     }
 }

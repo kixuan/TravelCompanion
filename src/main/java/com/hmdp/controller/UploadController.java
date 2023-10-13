@@ -2,8 +2,8 @@ package com.hmdp.controller;
 
 import cn.hutool.core.io.FileUtil;
 import cn.hutool.core.util.StrUtil;
-import com.hmdp.dto.Result;
 import com.hmdp.constant.SystemConstants;
+import com.hmdp.dto.Result;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -50,8 +50,12 @@ public class UploadController {
         String suffix = StrUtil.subAfter(originalFilename, ".", true);
         // 生成目录
         String name = UUID.randomUUID().toString();
+        // 将哈希值用作文件的目录名或文件名的原因主要是为了快速检索和避免冲突。
+        // 给定输入的关键字，哈希函数将始终返回相同的哈希值。这是哈希函数的重要特性，即输入数据的微小变化都会导致哈希值的明显变化。
         int hash = name.hashCode();
+        // 保留哈希值的最后四位
         int d1 = hash & 0xF;
+        // 将这四位向右右移动四位再和15与，得到哈希值的另外两位低密度位
         int d2 = (hash >> 4) & 0xF;
         // 判断目录是否存在
         File dir = new File(SystemConstants.IMAGE_UPLOAD_DIR, StrUtil.format("/blogs/{}/{}", d1, d2));

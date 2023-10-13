@@ -46,11 +46,6 @@ public class CacheCilent {
 
     /**
      * 将任意Java对象序列化为json并存储在string类型的key中，并且可以设置逻辑过期时间，用于处理缓存击穿问题
-     *
-     * @param key   redis键
-     * @param value redis值
-     * @param time  缓存时间
-     * @param unit  时间单位
      */
     public void setWithLogicalExpire(String key, Object value, Long time, TimeUnit unit) {
         // 设置逻辑过期
@@ -69,7 +64,7 @@ public class CacheCilent {
      * @param keyPrefix  键前缀
      * @param id         就id啦
      * @param type       要转换的数据类型
-     * @param dbFallback 咩？
+     * @param dbFallback 查询数据库的方法
      * @param time       时间
      * @param unit       时间单位
      * @param <R>        数据类型
@@ -84,18 +79,18 @@ public class CacheCilent {
         //查询redis，若存在则转换成对象后返回
         String key = keyPrefix + id;
         String Json = stringRedisTemplate.opsForValue().get(key);
-
+        log.info("Json:" + Json);
         //这⾥判断的是Json是否真的有值，不包括空值
         if (StringUtils.isNotBlank(Json)) {
             return JSONUtil.toBean(Json, type);
         }
 
         // 判断缓存是否命中(命中的是否是空值)。
-        // 如果isNotBlank ＋ !=null，说明命中，之前就请求过了且redis设为了“”，这种情况也不要再请求redis了，直接返回错误
+        // 如果isNotBlank ＋ !=null，说明命中，之前就请求过了且redis设为了“”，这种情况也不要再请求redis了，直接返回null
         if (Json != null) {
             return null;
         }
-        //不存在则查询数据库，然后转成以json串存⼊redis后，返回
+        //不存在则查询数据库，然后转成以json串存⼊redis后，返回null
         R r = dbFallback.apply(id);
         if (r == null) {
             // 将空值写入redis
@@ -155,7 +150,6 @@ public class CacheCilent {
      * 根据指定的key查询缓存，并反序列化为指定类型，利用互斥锁的方式解决缓存击穿问题
      */
     public <R, ID> R queryWithMutex(String keyPrefix, ID id, Class<R> type, String lockKeyPrefix, Function<ID, R> dbFallback, Long time, TimeUnit unit) {
-
         //查询redis，若存在则转换成对象后返回
         String key = keyPrefix + id;
         String json = stringRedisTemplate.opsForValue().get(key);
@@ -177,11 +171,11 @@ public class CacheCilent {
         try {
             boolean lock = tryLock(lockKey);
             while (!lock) {
-                // 获取锁失败，偷偷睡一觉，再重新查询
+                // 获取锁失败，浅浅睡一觉，再重新查询
                 TimeUnit.MILLISECONDS.sleep(50);
                 lock = tryLock(lockKey);
             }
-            // DoubleCheck(因为此时有可能别的线程已经重新构建好缓存)
+            // DoubleCheck redis(因为此时有可能别的线程已经重新构建好缓存)
             json = stringRedisTemplate.opsForValue().get(key);
             if (StringUtils.isNotBlank(json)) {
                 r1 = JSONUtil.toBean(json, type);

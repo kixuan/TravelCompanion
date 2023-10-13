@@ -55,7 +55,7 @@ public class HmDianPingApplicationTests {
             List<RedisGeoCommands.GeoLocation<String>> locations = new ArrayList<>(value.size());
             // 3.3.写入redis GEOADD key 经度 纬度 member
             for (Shop shop : value) {
-                // stringRedisTemplate.opsForGeo().add(key, new Point(shop.getX(), shop.getY()), shop.getId().toString());
+                // stringRedisTemplate.opsForGeo().add(key,shop.getId().toString(), new Point(shop.getX(), shop.getY()));
                 locations.add(new RedisGeoCommands.GeoLocation<>(
                         shop.getId().toString(),
                         new Point(shop.getX(), shop.getY())
