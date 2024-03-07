@@ -42,8 +42,6 @@ import java.util.concurrent.Executors;
 @Slf4j
 @Service
 public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, VoucherOrder> implements IVoucherOrderService {
-
-
     @Resource
     private ISeckillVoucherService seckillVoucherService;
 
@@ -179,7 +177,13 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
         // 订单id
         long orderId = redisIdWorker.nextId("order");
         // 1.执行lua脚本
-        Long result = stringRedisTemplate.execute(SECKILL_SCRIPT, Collections.emptyList(), voucherId.toString(), userId.toString(), String.valueOf(orderId), String.valueOf(orderId));
+        Long result = stringRedisTemplate.execute(
+                SECKILL_SCRIPT,
+                Collections.emptyList(),
+                voucherId.toString(),
+                userId.toString(),
+                String.valueOf(orderId),
+                String.valueOf(orderId));
         int r = result.intValue();
         // 2.判断结果是否为0
         if (r != 0) {
@@ -204,7 +208,9 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
     public void createVoucherOrder(VoucherOrder voucherOrder) {
         Long userId = voucherOrder.getUserId();
         // 5.1.查询订单
-        int count = query().eq("user_id", userId).eq("voucher_id", voucherOrder.getVoucherId()).count();
+        int count = query().eq("user_id", userId)
+                .eq("voucher_id", voucherOrder.getVoucherId())
+                .count();
         // 5.2.判断是否存在
         if (count > 0) {
             // 用户已经购买过了
@@ -212,12 +218,14 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
             return;
         }
 
-        // 6.扣减库存
+        // 6.扣减库存【乐观锁：
+        // 6.1 只要扣减库存时的库存和之前查的一样，就意味着没有人在中间修改过库存，那么就是安全的  ==》成功几率太小
+        // 6.2 只要 > 0 就可以扣减成功，解决超卖问题】
         boolean success = seckillVoucherService.update().setSql("stock = stock - 1") // set stock = stock - 1
-                .eq("voucher_id", voucherOrder.getVoucherId()).gt("stock", 0) // where id = ? and stock > 0
+                .eq("voucher_id", voucherOrder.getVoucherId())
+                .gt("stock", 0) // where id = ? and stock > 0
                 .update();
-        if (!success) {
-            // 扣减失败
+        if (!success) {   // 扣减失败
             log.error("库存不足");
             return;
         }
@@ -243,14 +251,14 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
     //     Long userId = UserHolder.getUser().getId();
     //     // 之前的：没有考虑集群模式下的锁问题
     //     // 通过userId控制锁的粒度，只有相同用户才会加锁
-    //     // synchronized是java内置的一个线程同步关键字，可以卸载需要同步的对象、方法或者特定的代码块中
+    //     // synchronized是java内置的一个线程同步关键字，可以写在需要同步的对象、方法或者特定的代码块中
     //     // intern()方法是将字符串放入常量池中，这样相同的字符串就会指向同一个对象，从而实现锁的粒度控制
-    //     // synchronized (userId.toString().intern()) {
+    //     synchronized (userId.toString().intern()) {
     //     // 如果直接使用this调用方法，调用的是非代理对象，但是事务是靠代理对象生效的，所以我们要拿到代理对象，走代理对象的方法，才能实现事务控制
-    //     //     // 通过AopContext.currentProxy()获取代理对象，从而实现事务控制
-    //     //     IVoucherOrderService proxy = (IVoucherOrderService) AopContext.currentProxy();
-    //     //     return proxy.createVoucherOrder(voucherId);
-    //     // }
+    //         // 通过AopContext.currentProxy()获取代理对象，从而实现事务控制
+    //         IVoucherOrderService proxy = (IVoucherOrderService) AopContext.currentProxy();
+    //         return proxy.createVoucherOrder(voucherId);
+    //     }
     //
     //     // 完善：考虑集群模式下的锁问题
     //     // 创建锁对象

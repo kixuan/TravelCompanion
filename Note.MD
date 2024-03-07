@@ -473,6 +473,8 @@ login方法中并没有对Authorization 进行操作，而是将token传入redis
 
 可能是返回结果有token，前端拿到了这个token传给Authorization 的
 
+==》因为不是同一个东西，Authorization 只是为了初步判断这个用户存不存在，我们不用具体的值，redis中的token才是我们后端判断实际用来获取用户的
+
 ## 商户查询缓存
 
 ### 0、为什么要缓存

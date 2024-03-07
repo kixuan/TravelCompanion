@@ -17,13 +17,16 @@ import java.util.function.Function;
 import static com.hmdp.constant.RedisConstants.CACHE_NULL_TTL;
 import static com.hmdp.constant.RedisConstants.LOCK_SHOP_TTL;
 
+/**
+ * 缓存客户端
+ */
 @Slf4j
 @Component
 public class CacheCilent {
 
     private final StringRedisTemplate stringRedisTemplate;
 
-    //  线性池
+    //  线性池：创建了一个固定大小为 10 的线程池，用于执行异步任务
     private static final ExecutorService CACHE_REBUILD_EXECUTOR = Executors.newFixedThreadPool(10);
 
     public CacheCilent(StringRedisTemplate stringRedisTemplate) {
@@ -45,7 +48,8 @@ public class CacheCilent {
     }
 
     /**
-     * 将任意Java对象序列化为json并存储在string类型的key中，并且可以设置逻辑过期时间，用于处理缓存击穿问题
+     * 逻辑过期，处理缓存击穿问题
+     * 将任意Java对象序列化为json并存储在string类型的key中，并且可以设置逻辑过期时间，
      */
     public void setWithLogicalExpire(String key, Object value, Long time, TimeUnit unit) {
         // 设置逻辑过期
@@ -54,12 +58,13 @@ public class CacheCilent {
         // 注意转second
         redisData.setExpireTime(LocalDateTime.now().plusSeconds(unit.toSeconds(time)));
 
-        //写入redis
+        // 转成json 写入redis
         stringRedisTemplate.opsForValue().set(key, JSONUtil.toJsonStr(redisData));
     }
 
     /**
-     * 根据指定的key查询缓存，并反序列化为指定类型，利用缓存空值的方式解决缓存穿透问题
+     * 利用缓存空值的方式解决缓存穿透问题
+     * 根据指定的key查询缓存，并反序列化为指定类型
      *
      * @param keyPrefix  键前缀
      * @param id         就id啦
@@ -68,14 +73,13 @@ public class CacheCilent {
      * @param time       时间
      * @param unit       时间单位
      * @param <R>        数据类型
-     * @param <ID>       id类型
      */
 
     // 返回值不确定 —— 使用泛型（先定义泛型Class<R> type，再返回类型<R>R）
     // id也不确定 —— 还是泛型，用ID，泛型类型定义改成<R,ID>R
-    // 查数据库的逻辑不确定 —— 用Function<ID, R> :ID是入参，R是返回值
+    // 查数据库的逻辑不确定 —— 用Function<ID, R> :ID是入参，R是返回值  --> 感觉没有必要，直接写成Long就好了呀
     // 过期时间也不要写死 —— 用Long time, TimeUnit unit
-    public <R, ID> R queryWithPassThrough(String keyPrefix, ID id, Class<R> type, Function<ID, R> dbFallback, Long time, TimeUnit unit) {
+    public <R> R queryWithPassThrough(String keyPrefix, Long id, Class<R> type, Function<Long, R> dbFallback, Long time, TimeUnit unit) {
         //查询redis，若存在则转换成对象后返回
         String key = keyPrefix + id;
         String Json = stringRedisTemplate.opsForValue().get(key);
@@ -103,14 +107,16 @@ public class CacheCilent {
 
 
     /**
-     * 根据指定的key查询缓存，并反序列化为指定类型，利用逻辑过期的方式解决缓存击穿问题
+     * 利用逻辑过期的方式解决缓存击穿问题
+     * 前提是热点key都已经提前存在redis中了
+     * 根据指定的key查询缓存，并反序列化为指定类型
      */
-    public <R, ID> R queryWithLogicalExpire(String keyPrefix, ID id, Class<R> type, Function<ID, R> dbFallback, Long time, TimeUnit unit) {
-        //查询redis，这里的shopJson是(Object)RedisData类型的
+    public <R> R queryWithLogicalExpire(String keyPrefix, Long id, Class<R> type, Function<Long, R> dbFallback, Long time, TimeUnit unit) {
+        //查询redis，这里的Json是(Object)RedisData类型的
         String key = keyPrefix + id;
         String Json = stringRedisTemplate.opsForValue().get(key);
 
-        //未命中，说明不是热点key
+        //未命中，说明不是热点key，查不到无所谓直接返回null
         if (StringUtils.isBlank(Json)) {
             return null;
         }
@@ -132,9 +138,9 @@ public class CacheCilent {
                 try {
                     // 模拟重建延迟  saveShop2Redis
                     // 1. 查数据库
-                    R r1 = dbFallback.apply(id);
+                    R newdata = dbFallback.apply(id);
                     // 2. 带逻辑过期地写入redis
-                    this.setWithLogicalExpire(key, r1, time, unit);
+                    this.setWithLogicalExpire(key, newdata, time, unit);
                 } catch (Exception e) {
                     throw new RuntimeException(e);
                 } finally {
@@ -147,7 +153,8 @@ public class CacheCilent {
     }
 
     /**
-     * 根据指定的key查询缓存，并反序列化为指定类型，利用互斥锁的方式解决缓存击穿问题
+     * 利用互斥锁的方式解决缓存击穿问题
+     * 根据指定的key查询缓存，并反序列化为指定类型
      */
     public <R, ID> R queryWithMutex(String keyPrefix, ID id, Class<R> type, String lockKeyPrefix, Function<ID, R> dbFallback, Long time, TimeUnit unit) {
         //查询redis，若存在则转换成对象后返回

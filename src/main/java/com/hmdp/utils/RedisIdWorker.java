@@ -22,6 +22,7 @@ public class RedisIdWorker {
 
     private final StringRedisTemplate stringRedisTemplate;
 
+    // spring推荐构造器注入，其实功能好像是一样的
     // 因为这里的stringRedisTemplate是通过构造函数注入的，而不是@Resouce注入的，所以需要手动写一个构造函数
     public RedisIdWorker(StringRedisTemplate stringRedisTemplate) {
         this.stringRedisTemplate = stringRedisTemplate;

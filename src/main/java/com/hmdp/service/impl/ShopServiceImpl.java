@@ -62,12 +62,10 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
      */
     public Result queryById(Long id) {
         // 解决缓存穿透
-        Shop shop = cacheCilent
-                .queryWithPassThrough(CACHE_SHOP_KEY, id, Shop.class, this::getById, CACHE_SHOP_TTL, TimeUnit.MINUTES);
+        Shop shop = cacheCilent.queryWithPassThrough(CACHE_SHOP_KEY, id, Shop.class, this::getById, CACHE_SHOP_TTL, TimeUnit.MINUTES);
 
         // 解决缓存击穿——互斥锁
-        // Shop shop = cacheCilent
-        //                  .queryWithMutex(CACHE_SHOP_KEY,id,Shop.class,this::getById,CACHE_SHOP_TTL,TimeUnit.MINUTES);
+        // Shop shop = cacheCilent.queryWithMutex(CACHE_SHOP_KEY,id,Shop.class,this::getById,CACHE_SHOP_TTL,TimeUnit.MINUTES);
 
         // 解决缓存击穿——逻辑过期
         // Shop shop = cacheCilent.queryWithLogicalExpire(CACHE_SHOP_KEY, id, Shop.class, this::getById, CACHE_SHOP_TTL, TimeUnit.MINUTES);
@@ -112,6 +110,7 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
         }
         //先更新数据库，再删除缓存
         shopMapper.updateById(shop);
+        stringRedisTemplate.delete(CACHE_SHOP_KEY + id);
         return Result.ok();
     }
 

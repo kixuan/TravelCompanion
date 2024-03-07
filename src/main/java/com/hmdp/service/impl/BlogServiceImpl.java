@@ -144,10 +144,11 @@ public class BlogServiceImpl extends ServiceImpl<BlogMapper, Blog> implements IB
         // .stream()是把Set<String>转换成Stream<String>
         // .map(Long::valueOf)通过应用Long类的静态方法valueOf将每个元素转换为Long类型，把Stream<String>转换成Stream<Long>
         // .collect(Collectors.toList())通过Collectors工具类的toList方法将Stream<Long>转换成List<Long>
+        // Set<String> --> Stream<String> --> Stream<Long> --> List<Long>
         List<Long> ids = top5.stream().map(Long::valueOf).collect(Collectors.toList());
         String idStr = StrUtil.join(",", ids);
 
-        // 3.根据用户id查询用户 WHERE id IN ( 5 , 1 ) ORDER BY FIELD(id, 5, 1)
+        // 3.根据用户id查询用户 WHERE id IN (5,1) ORDER BY FIELD(id,5,1)
         Stream<UserDTO> userDTOS = userService.query().in("id", ids)
                 // 注意的这里的ORDER BY FIELD，这样才能实现数据库查询也按照自己想要的顺序排序
                 .last("ORDER BY FIELD(id," + idStr + ")")
