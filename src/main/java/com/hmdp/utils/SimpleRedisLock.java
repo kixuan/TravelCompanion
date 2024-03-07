@@ -12,6 +12,7 @@ import static com.hmdp.constant.RedisConstants.LOCK_KEY_PREFIX;
 
 public class SimpleRedisLock implements ILock {
 
+    // 标识 order:userId
     private final String name;
     private final StringRedisTemplate stringRedisTemplate;
 

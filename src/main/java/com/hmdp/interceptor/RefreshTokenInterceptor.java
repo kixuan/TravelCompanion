@@ -29,7 +29,7 @@ public class RefreshTokenInterceptor implements HandlerInterceptor {
     @Override
     // 这里没有用到response和handler，那为什么还要写呢？
     // 因为继承了HandlerInterceptor，重写的话也必须参数对应
-    public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
+    public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
 
         // 1.获取请求头中的token
         String token = request.getHeader("authorization");
@@ -39,8 +39,7 @@ public class RefreshTokenInterceptor implements HandlerInterceptor {
 
         // 2.基于TOKEN获取redis中的用户
         String key = LOGIN_USER_KEY + token;
-        // opsForHash()：返回一个操作哈希数据结构的特定操作器
-        // entries()：获取指定key的哈希表中的所有字段和它们的值
+        // entries()：获取指定key的哈希表中的【所有字段】和它们的值
         Map<Object, Object> userMap = stringRedisTemplate.opsForHash().entries(key);
         if(userMap.isEmpty()){
             return true;

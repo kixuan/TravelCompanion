@@ -104,22 +104,26 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
             user = createUserWithPhone(phone);
         }
 
-//        4.保存用户到session  -- 保存到token中
+//        4.保存用户到session  -- 保存到redis中 【为什么要这一步？因为要实现拦截器，就是根据redis中的用户数据判断该用户是否登录，能否放行】
 //        session.setAttribute("user", BeanUtil.copyProperties(user, UserDTO.class));
         String token = UUID.randomUUID().toString(true);
+        // userDTO 脱敏处理
         UserDTO userDTO = BeanUtil.copyProperties(user, UserDTO.class);
-        // 因为user的id是long类型的，但是StringRedisTemplate只支持String类型的key-value，因此要需要⾃定义map映射规将user转成map后进⾏hash存储
+
+        // user的id是long类型的，但是StringRedisTemplate只支持String类型的key-value
+        // 因此要需要⾃定义map映射规将user对象转成map后进⾏hash存储
         // userDTO：要转换为Map的Java对象       new HashMap<>()：存储转换后的Map的容器
+        // 调用CopyOptions的方法，忽略userDTO对象中的空值属性，即那些值为null的属性不会被放入userMap中
+        // 将属性值放入userMap前，将属性值（long的id）转换为其字符串表示形式
+        // 最后的结果是 userMap 中存储了userDTO对象中的非空属性，且属性值都是字符串类型
         Map<String, Object> userMap = BeanUtil.beanToMap(userDTO, new HashMap<>(),
-                // 调用CopyOptions的方法，忽略userDTO对象中的空值属性，即那些值为null的属性不会被放入userMap中
                 CopyOptions.create().setIgnoreNullValue(true)
-                        // 将属性值放入userMap前，将属性值（long的id）转换为其字符串表示形式
                         .setFieldValueEditor((fieldName, fieldValue) -> fieldValue.toString()));
 
-//        5.存储
+        // 5.存储  注意hash用的是putAll，而不是put
         String tokenKey = LOGIN_USER_KEY + token;
         stringRedisTemplate.opsForHash().putAll(tokenKey, userMap);
-//        设置过期时间
+        // 设置过期时间
         stringRedisTemplate.expire(tokenKey, LOGIN_USER_TTL, TimeUnit.MINUTES);
         return Result.ok(token);
     }

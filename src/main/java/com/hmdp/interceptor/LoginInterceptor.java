@@ -57,7 +57,7 @@ public class LoginInterceptor implements HandlerInterceptor {
         // // 放行
         // return true;
 
-        // ③（添加一切拦截器后）根据ThreadLocal是否有用户判断
+        // ③（添加一切拦截器后）根据ThreadLocal判断是否有用户
         if (UserHolder.getUser() == null) {
             // 没有，需要拦截，设置状态码
             response.setStatus(401);
